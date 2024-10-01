@@ -14,9 +14,25 @@ handler.setFormatter(formater)
 
 load_dotenv()
 
-WEIGHTS_PARAM = ['WPTPWP', 'LCP', 'PMPWP-WP', 'TIC-IC', 'LCTLWP-WP', 'LCPRCNT', 'LMP']
-STOP_TRADING = 'торги приостановлены'
+NEEDFUL = [
+    'SECID', 'SHORTNAME', 'PREVPRICE', 'PREVWAPRICE', 'PREVDATE',
+    'STATUS', 'WAPTOPREVWAPRICE', 'UPDATETIME', 'LCURRENTPRICE', 'LAST',
+    'PRICEMINUSPREVWAPRICE', 'DATAUPDATE', 'CURRENCYID', 'TRADINGSESSION',
+    'STATUS_FILTER', 'LASTCHANGEPRCNT', 'WAPRICE', 'LASTCNGTOLASTWAPRICE',
+    'WAPTOPREVWAPRICEPRCNT', 'MARKETPRICE', 'ISSUECAPITALIZATION',
+    'TRENDISSUECAPITALIZATION', 'BOARDID', 'VALUE'
+]
+STATISTIC_NEED = [
+    'SECID', 'STATUS_FILTER', 'LAST', 'FILTER_SCORE', 'VALUE'
+]
+TYPE_DATA_IMOEX = ['securities', 'marketdata']
+SHARE_GROUPS = ['EQBR', 'EQBS', 'EQCC', 'TQBR']
 
+WEIGHTS_PARAM = [
+    'WPTPWP', 'LCP', 'PMPWP_WP', 'TIC_IC', 'LCTLWP_WP', 'LCPRCNT', 'LMP'
+]
+STOP_TRADING = 'торги приостановлены'
+RUN_TRADING = 'торги идут'
 # URL для получения данных Мосбиржи.
 IMOEX_URL = (
     'http://iss.moex.com/iss/engines/stock/markets/shares/'
@@ -25,7 +41,9 @@ IMOEX_URL = (
 
 
 # Итерация работы.
-TIME_UPDATE = 100
+SET_ITERATION = 5
+TIME_UPDATE = 5
+START_VALUE = 0
 
 # Баллы по параметрам алгоритма.
 WPTPWP_POINTS = 5
@@ -67,3 +85,7 @@ DB_URL = (
     f'{db_connector}://{db_login}:{db_password}'
     f'@localhost:{db_port}/{db_name}'
 )
+
+MIN = [-25, 10]
+MAX = [5, 15]
+MED = [-5, 5]

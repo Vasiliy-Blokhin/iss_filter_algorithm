@@ -36,8 +36,10 @@ def interp_6_dote(
         is_abs_limit=True
 ):
     # Реализует интерполяцию в диапозоне -6 -- 6 -- 0 -- -6 -- 6
-    if (dote_prcnt > prcnt_start_limit
-        and dote_prcnt < prcnt_limits[2]):
+    if (
+        dote_prcnt > prcnt_start_limit
+        and dote_prcnt < prcnt_limits[2]
+    ):
         return interp(
             dote_prcnt,
             xp=[prcnt_start_limit, prcnt_limits[2]],
@@ -52,8 +54,10 @@ def interp_6_dote(
 
     if is_abs_limit:
         prcnt_start_limit = -prcnt_start_limit
-    if (dote_prcnt < prcnt_start_limit
-        and dote_prcnt > prcnt_limits[1]):
+    if (
+        dote_prcnt < prcnt_start_limit
+        and dote_prcnt > prcnt_limits[1]
+    ):
         return interp(
             dote_prcnt,
             xp=[prcnt_limits[1], prcnt_start_limit],

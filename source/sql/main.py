@@ -3,8 +3,8 @@ from dotenv import load_dotenv
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from algorythm.sql.tables import Base
-from algorythm.settings.settings import DB_URL
+from source.sql.tables import Base
+from source.settings.settings import DB_URL
 load_dotenv()
 
 
@@ -15,6 +15,10 @@ main_engine = sa.create_engine(
 
 
 class SQLmain:
+
+    @staticmethod
+    def create_all_tables():
+        Base.metadata.create_all(bind=main_engine)
 
     @staticmethod
     def insert_data(data, table):
@@ -28,6 +32,12 @@ class SQLmain:
                 tables=[table.__table__]
             )
 
+            s.execute(sa.insert(table).values(data))
+            s.commit()
+
+    @staticmethod
+    def append_data(data, table):
+        with Session(bind=main_engine) as s:
             s.execute(sa.insert(table).values(data))
             s.commit()
 
