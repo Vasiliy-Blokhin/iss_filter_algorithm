@@ -49,7 +49,7 @@ class Statistic(JSONSaveAndRead, SQLmain):
                                 count_positive += 1
 
                             count_price_before += start['LAST']
-                            count_price_after += current['LAST']
+                            count_price_after += current['VOLUME']
                             count_all += 1
 
                 except Exception:
@@ -86,7 +86,6 @@ class Statistic(JSONSaveAndRead, SQLmain):
     def result_statistic(self):
         try:
             current_statistic = self.make_statistic()
-
             statistic_prcnt = round(
                 100 * current_statistic[
                     'potential_profitability'
@@ -97,7 +96,7 @@ class Statistic(JSONSaveAndRead, SQLmain):
                 or abs(statistic_prcnt) / 100 == COMISSION_COEFF
             ):
                 return False
-
+            print(current_statistic)
             self.append_data(
                 data=current_statistic,
                 table=tables.AllStatistic

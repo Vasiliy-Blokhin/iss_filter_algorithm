@@ -18,7 +18,7 @@ if __name__ == '__main__':
     while True:
 
         a.data_prepare()
-        if True:
+        if a.is_work_time():
             a.data_filter()
 
             if flag_prepare_data:
