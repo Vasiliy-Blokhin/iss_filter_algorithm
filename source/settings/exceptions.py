@@ -1,0 +1,2 @@
+class NullData(Exception):
+    pass

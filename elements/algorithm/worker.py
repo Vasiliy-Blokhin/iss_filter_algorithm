@@ -29,6 +29,7 @@ from source.settings.settings import (
     STATISTIC_NEED
 )
 from source.settings.module import interp_4_dote, interp_6_dote
+from source.settings.exceptions import NullData
 from source.sql.main import SQLmain
 import source.sql.tables as tables
 
@@ -193,18 +194,24 @@ class Algorithm(JSONSaveAndRead, SQLmain):
 
                 data.append(share)
 
-            except Exception as error:
-                logger.error(error)
+            except Exception:
                 continue
 
-        self.insert_data(
-            data=data,
-            table=tables.FilterData
-        )
-        self.insert_data(
-            data=param_score_list,
-            table=tables.CurrentScore
-        )
+        try:
+            if data == [] or param_score_list == []:
+                raise NullData
+            self.insert_data(
+                data=data,
+                table=tables.FilterData
+            )
+            self.insert_data(
+                data=param_score_list,
+                table=tables.CurrentScore
+            )
+        except NullData:
+            logger.error(
+                'filter data or params score is null'
+            )
 
     @classmethod
     def is_work_time(self):
