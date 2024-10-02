@@ -118,8 +118,13 @@ class WEIGHTS(JSONSaveAndRead, SQLmain):
                         return [0, 0]
                     else:
                         continue
-
-            return [all_success / len(data), all_profit / len(data)]
+            prcnt_statistic = all_success / len(data)
+            median_profit = all_profit / len(data)
+            logger.info(
+                f'percent: {prcnt_statistic}; '
+                f'median profit: {median_profit};'
+            )
+            return [prcnt_statistic, median_profit]
         except ZeroDivisionError:
             return [0, 0]
 
