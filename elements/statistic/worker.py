@@ -49,7 +49,7 @@ class Statistic(JSONSaveAndRead, SQLmain):
                                 count_positive += 1
 
                             count_price_before += start['LAST']
-                            count_price_after += current['VOLUME']
+                            count_price_after += current['VALUE']
                             count_all += 1
 
                 except Exception:

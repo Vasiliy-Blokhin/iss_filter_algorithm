@@ -73,6 +73,11 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 lcprcnt_max = LCPRCNT_POINTS * weight.get('LCPRCNT')
                 lmp_max = LMP_POINTS * weight.get('LMP')
 
+                max_weights = sum(
+                    [wptpwp_max, lcp_max, pmpwp_max, tic_ic_max,
+                        lctlw_max, lcprcnt_max, lmp_max]
+                )
+
                 param_score['WPTPWP_MAX'] = wptpwp_max
                 param_score['LCP_MAX'] = lcp_max
                 param_score['PMPWP_WP_MAX'] = pmpwp_max
@@ -81,7 +86,6 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 param_score['LMP_MAX'] = lmp_max
                 param_score['TIC_IC_MAX'] = tic_ic_max
 
-                
 # start__________________________________________________________
 
                 wptpwp = -interp_4_dote(
@@ -95,7 +99,7 @@ class Algorithm(JSONSaveAndRead, SQLmain):
 
 # _______________________________________________________________
 
-                if share['LCURRENTPRICE'] > share['LAST']:
+                if share['LCURRENTPRICE'] >= share['LAST']:
                     lcp = lcp_max * weight['LCP']
                     current_score += lcp
                     param_score['LCP_CUR'] = lcp
@@ -168,8 +172,11 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 param_score['LMP_CUR'] = lmp
 # end____________________________________________________________
 
-                share['FILTER_SCORE'] = coeff_result * current_score
-
+                share['FILTER_SCORE'] = (
+                    (
+                        100 * current_score / max_weights
+                    ) * coeff_result
+                )
                 if share['FILTER_SCORE'] >= BORDERS_SCORE:
                     share['STATUS_FILTER'] = STATUS_UP
 

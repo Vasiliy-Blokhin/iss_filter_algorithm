@@ -66,9 +66,9 @@ MAX_SCORE = (
     abs(LMP_POINTS)
 )
 # Абстрактное увеличение результата для выборки
-ABSTRACT_COEFF = 2.5
+ABSTRACT_COEFF = 1
 # Границы допуска.
-BORDERS_SCORE = MAX_SCORE * 0.5
+BORDERS_SCORE = 70
 
 SIZE_F_MAX_SCORE_RESULT = 10
 
