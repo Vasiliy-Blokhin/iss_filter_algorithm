@@ -16,25 +16,27 @@ if __name__ == '__main__':
     flag_prepare_data = True
     a.create_all_tables()
     while True:
+        try:
+            a.data_prepare()
+            if a.is_work_time():
+                a.data_filter()
 
-        a.data_prepare()
-        if a.is_work_time():
-            a.data_filter()
+                if flag_prepare_data:
+                    s.prepare_start_data()
+                    flag_prepare_data = False
 
-            if flag_prepare_data:
-                s.prepare_start_data()
-                flag_prepare_data = False
+                counter += 1
+                if counter >= SET_ITERATION:
+                    w.weights_correct()
+                    s.result_statistic()
 
-            counter += 1
-            if counter >= SET_ITERATION:
-                w.weights_correct()
-                s.result_statistic()
-
+                    flag_prepare_data = True
+                    counter = START_VALUE
+            else:
                 flag_prepare_data = True
                 counter = START_VALUE
-        else:
-            flag_prepare_data = True
-            counter = START_VALUE
-
-        logger.info(f'Итерация # {counter} окончена')
-        sleep(TIME_UPDATE)
+        except Exception as error:
+            logger.error(error)
+        finally:
+            logger.info(f'Итерация # {counter} окончена')
+            sleep(TIME_UPDATE)

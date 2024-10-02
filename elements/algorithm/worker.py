@@ -212,6 +212,8 @@ class Algorithm(JSONSaveAndRead, SQLmain):
             logger.error(
                 'filter data or params score is null'
             )
+        except Exception as error:
+            logger.error(error)
 
     @classmethod
     def is_work_time(self):
