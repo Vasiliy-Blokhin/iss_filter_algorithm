@@ -89,3 +89,5 @@ DB_URL = (
 MIN = [-25, 10]
 MAX = [5, 15]
 MED = [-5, 5]
+
+NULL_DATA_ERROR = 'null_data'
