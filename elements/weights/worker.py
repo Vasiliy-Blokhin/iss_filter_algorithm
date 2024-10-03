@@ -39,7 +39,6 @@ class WEIGHTS(JSONSaveAndRead, SQLmain):
                     )
                     if weights_dict == {}:
                         continue
-                    print(weights_dict)
                     self.insert_data(weights_dict, tables.Weights)
                 except ZeroDivisionError:
                     continue

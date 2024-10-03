@@ -48,7 +48,7 @@ class Statistic(JSONSaveAndRead, SQLmain):
                             if current['LAST'] >= start['LAST']:
                                 count_positive += 1
 
-                            count_price_before += start['LAST']
+                            count_price_before += start['VALUE']
                             count_price_after += current['VALUE']
                             count_all += 1
 
