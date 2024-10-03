@@ -3,8 +3,13 @@ from time import sleep
 from elements.algorithm.worker import Algorithm as a
 from elements.statistic.worker import Statistic as s
 from elements.weights.worker import WEIGHTS as w
-from source.settings.settings import handler, TIME_UPDATE, SET_ITERATION, START_VALUE
-
+from source.settings.settings import (
+    handler,
+    TIME_UPDATE,
+    SET_ITERATION,
+    START_VALUE,
+    NULL_DATA_ERROR
+)
 # Запуск логгера.
 logger = logging.getLogger(name=__name__)
 logger.setLevel(logging.DEBUG)
@@ -19,7 +24,9 @@ if __name__ == '__main__':
         try:
             a.data_prepare()
             if a.is_work_time():
-                a.data_filter()
+                if a.data_filter() == NULL_DATA_ERROR:
+                    flag_prepare_data = True
+                    counter = START_VALUE
 
                 if flag_prepare_data:
                     s.prepare_start_data()

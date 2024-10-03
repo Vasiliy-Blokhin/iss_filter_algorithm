@@ -26,7 +26,8 @@ from source.settings.settings import (
     NEEDFUL,
     RUN_TRADING,
     IMOEX_URL,
-    STATISTIC_NEED
+    STATISTIC_NEED,
+    NULL_DATA_ERROR
 )
 from source.settings.module import interp_4_dote, interp_6_dote
 from source.settings.exceptions import NullData
@@ -212,6 +213,7 @@ class Algorithm(JSONSaveAndRead, SQLmain):
             logger.error(
                 'filter data or params score is null'
             )
+            return NULL_DATA_ERROR
         except Exception as error:
             logger.error(error)
 
