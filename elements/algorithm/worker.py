@@ -43,10 +43,6 @@ logger.addHandler(handler)
 
 class Algorithm(JSONSaveAndRead, SQLmain):
     """ Класс для работы с API imoex (iss)."""
-    def __init__(self, url, file, type_data: str) -> None:
-        super().__init__(url, file)
-        self.type_data: str = type_data
-
     @classmethod
     def data_filter(self):
         """
@@ -247,6 +243,7 @@ class Algorithm(JSONSaveAndRead, SQLmain):
         resp = self.get_api_response(
             url=IMOEX_URL
         )
+        logger.info('get response info from ISS')
         # Фильтрация полученных данных (из разных "графов").
         for element in resp[1][type_data]:
             # Оставляет только акции.

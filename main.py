@@ -23,19 +23,25 @@ if __name__ == '__main__':
     while True:
         try:
             a.data_prepare()
+            logger.info('data prepare success')
             if a.is_work_time():
                 if a.data_filter() == NULL_DATA_ERROR:
                     flag_prepare_data = True
                     counter = START_VALUE
+                    continue
 
+                logger.info('data filter success')
                 if flag_prepare_data:
                     s.prepare_start_data()
                     flag_prepare_data = False
+                    logger.info('prepare start data success')
 
                 counter += 1
                 if counter >= SET_ITERATION:
                     w.weights_correct()
+                    logger.info('weights counter success')
                     s.result_statistic()
+                    logger.info('counting statistic success')
 
                     flag_prepare_data = True
                     counter = START_VALUE

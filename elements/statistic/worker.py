@@ -61,7 +61,7 @@ class Statistic(JSONSaveAndRead, SQLmain):
 
         comission = count_price_after * COMISSION_COEFF
         potential_profitability = (
-            count_price_before - count_price_after - comission
+            count_price_after - count_price_before - comission
         )
         if potential_profitability > 0:
             potential_profitability *= 0.87
@@ -103,3 +103,5 @@ class Statistic(JSONSaveAndRead, SQLmain):
             )
         except ZeroDivisionError:
             return False
+        except Exception as error:
+            logger.error(error)
