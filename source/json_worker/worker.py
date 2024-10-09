@@ -2,7 +2,7 @@ import requests
 import json
 import logging
 import sys
-
+from time import sleep
 
 # Запуск логгера.
 # Описание хандлера для логгера.
@@ -44,6 +44,8 @@ class JSONSaveAndRead():
             return requests.get(url, headers=headers).json()
         except json.decoder.JSONDecodeError:
             return []
+        finally:
+            sleep(5)
 
     @classmethod
     def save_file(cls, data, file=None):
