@@ -58,6 +58,12 @@ class Algorithm(JSONSaveAndRead, SQLmain):
 
         for share in shares_data:
             try:
+                if (
+                    share['LAST'] == 0
+                    or share['LAST'] is None
+                ):
+                    continue
+
                 weight = weight_data[0]
                 current_score = 0
                 param_score = {}
