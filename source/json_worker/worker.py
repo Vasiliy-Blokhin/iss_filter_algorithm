@@ -45,7 +45,7 @@ class JSONSaveAndRead():
         except json.decoder.JSONDecodeError:
             return []
         finally:
-            sleep(5)
+            sleep(60)
 
     @classmethod
     def save_file(cls, data, file=None):

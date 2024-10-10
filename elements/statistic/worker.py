@@ -37,8 +37,8 @@ class Statistic(JSONSaveAndRead, SQLmain):
         count_price_before = 0
         count_price_after = 0
 
-        for start in self.get_all_data(tables.CurrentScore):
-            for current in self.get_all_data(tables.StartScore):
+        for start in self.get_all_data(tables.StartScore):
+            for current in self.get_all_data(tables.CurrentScore):
                 try:
                     if start['SECID'] == current['SECID']:
                         if start['LAST'] is None:
