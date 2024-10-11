@@ -1,17 +1,14 @@
 import requests
 import json
 import logging
-import sys
 from time import sleep
 
-# Запуск логгера.
-# Описание хандлера для логгера.
-handler = logging.StreamHandler(sys.stdout)
-formater = logging.Formatter(
-    '%(name)s, %(funcName)s, %(asctime)s, %(levelname)s - %(message)s.'
+from source.settings.settings import (
+    TIME_RESPONSE,
+    handler
 )
 
-handler.setFormatter(formater)
+
 logger = logging.getLogger(name=__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(handler)
@@ -45,7 +42,7 @@ class JSONSaveAndRead():
         except json.decoder.JSONDecodeError:
             return []
         finally:
-            sleep(60)
+            sleep(TIME_RESPONSE)
 
     @classmethod
     def save_file(cls, data, file=None):

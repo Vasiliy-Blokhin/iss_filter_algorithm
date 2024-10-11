@@ -22,9 +22,12 @@ if __name__ == '__main__':
     a.create_all_tables()
     while True:
         try:
+            if a.is_not_work_time():
+                continue
+
             a.data_prepare()
             logger.info('data prepare success')
-            if a.is_work_time():
+            if a.is_trade_time():
                 if a.data_filter() == NULL_DATA_ERROR:
                     flag_prepare_data = True
                     counter = START_VALUE

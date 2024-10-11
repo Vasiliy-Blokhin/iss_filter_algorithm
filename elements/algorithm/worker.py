@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime
-from pytz import timezone
+import pytz
 
 from source.json_worker.worker import JSONSaveAndRead
 from source.settings.settings import (
@@ -27,7 +27,7 @@ from source.settings.settings import (
     RUN_TRADING,
     IMOEX_URL,
     STATISTIC_NEED,
-    NULL_DATA_ERROR
+    NULL_DATA_ERROR,
 )
 from source.settings.module import interp_4_dote, interp_6_dote
 from source.settings.exceptions import NullData
@@ -220,13 +220,32 @@ class Algorithm(JSONSaveAndRead, SQLmain):
             logger.error(error)
 
     @classmethod
-    def is_work_time(self):
+    def is_trade_time(self):
         if self.get_all_data(
             table=tables.PrepareData
         )[0]['TRADINGSESSION'] == STOP_TRADING:
             logger.info('Торги приостановлены, работа не ведется')
             return False
         return True
+
+    @classmethod
+    def curent_msc_time(self):
+        timezone = 'Europe/Moscow'
+        current_msc_time_h = datetime.now(pytz.timezone(timezone)).hour
+        current_msc_time_m = datetime.now(pytz.timezone(timezone)).minute
+        return current_msc_time_h + current_msc_time_m / 100
+
+    @classmethod
+    def is_not_work_time(self, current_time=None):
+        if current_time is None:
+            current_time = self.curent_msc_time()
+
+        if (
+            (current_time < 9 and current_time > 23)
+        ):
+            return True
+
+        return False
 
 # prepare data ________________________________________
 
