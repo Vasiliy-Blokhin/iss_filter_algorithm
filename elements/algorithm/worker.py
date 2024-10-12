@@ -308,7 +308,7 @@ class Algorithm(JSONSaveAndRead, SQLmain):
 
             format = '%H:%M:%S (%d.%m)'
             el_sec['DATAUPDATE'] = (
-                datetime.now(timezone('Europe/Moscow'))
+                datetime.now(pytz.timezone('Europe/Moscow'))
             ).strftime(format)
 
             result.append(el_sec)

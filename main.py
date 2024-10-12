@@ -23,7 +23,9 @@ if __name__ == '__main__':
     while True:
         try:
             if a.is_not_work_time():
+                logger.info(f'is not work time {a.curent_msc_time()}')
                 continue
+            logger.info(f'work time: {a.curent_msc_time()}')
 
             a.data_prepare()
             logger.info('data prepare success')
