@@ -1,4 +1,4 @@
-from os import getenv
+from os import getenv, getcwd
 import sys
 
 from dotenv import load_dotenv
@@ -13,6 +13,8 @@ formater = logging.Formatter(
 handler.setFormatter(formater)
 
 load_dotenv()
+
+BASE_DIR: str = getenv('BASE_DIR') if getenv('BASE_DIR') else getcwd()
 
 NEEDFUL = [
     'SECID', 'SHORTNAME', 'PREVPRICE', 'PREVWAPRICE', 'PREVDATE',

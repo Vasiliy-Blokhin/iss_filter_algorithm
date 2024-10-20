@@ -41,15 +41,18 @@ class Statistic(JSONSaveAndRead, SQLmain):
             for current in self.get_all_data(tables.CurrentScore):
                 try:
                     if start['SECID'] == current['SECID']:
-                        if start['LAST'] is None:
+                        if (
+                            start['LAST'] is None
+                            or start['LAST'] == 0
+                        ):
                             continue
 
                         if current['STATUS_FILTER'] == STATUS_UP:
                             if current['LAST'] > start['LAST']:
                                 count_positive += 1
 
-                            count_price_before += start['VALUE']
-                            count_price_after += current['VALUE']
+                            count_price_before += start['LAST']
+                            count_price_after += current['LAST']
                             count_all += 1
 
                 except Exception:

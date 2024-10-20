@@ -28,6 +28,7 @@ from source.settings.settings import (
     IMOEX_URL,
     STATISTIC_NEED,
     NULL_DATA_ERROR,
+    BASE_DIR
 )
 from source.settings.module import interp_4_dote, interp_6_dote
 from source.settings.exceptions import NullData
@@ -329,3 +330,24 @@ class Algorithm(JSONSaveAndRead, SQLmain):
             data=self.union_api_response(*data_list),
             table=tables.PrepareData
         )
+
+    @classmethod
+    def writing_result(self):
+        with open(file=BASE_DIR + '/result.txt', mode='r') as file:
+            file_text = file.read()
+            file.close()
+
+        text = '\n' + '_' * 250 + '\n'
+        text += 'time: ' + str(self.curent_msc_time())
+        text += '\nstart data: \n'
+        text += str(self.get_all_data(table=tables.StartScore))
+        text += '\ncurrent data: \n'
+        text += str(self.get_all_data(table=tables.CurrentScore))
+        text += '\ncurrent statistic: \n'
+        text += str(self.get_all_data(table=tables.AllStatistic)[-1])
+
+        file_text += text
+
+        with open(file=BASE_DIR + '/result.txt', mode='w') as file:
+            file_text = file.write(file_text)
+            file.close()

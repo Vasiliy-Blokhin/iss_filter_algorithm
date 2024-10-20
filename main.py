@@ -47,6 +47,8 @@ if __name__ == '__main__':
                     logger.info('weights counter success')
                     s.result_statistic()
                     logger.info('counting statistic success')
+                    a.writing_result()
+                    logger.info('save result file')
 
                     flag_prepare_data = True
                     counter = START_VALUE
