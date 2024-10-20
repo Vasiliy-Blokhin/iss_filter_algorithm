@@ -59,7 +59,7 @@ LMP_POINTS = 15
 
 # Коэффициенты для работы алгоритма и статистики.
 # Комиссия на оборот.
-COMISSION_COEFF = 0
+COMISSION_COEFF = 0.08 / 100
 INCOME_COEFF = 0.2 / 100
 BUY_COEFF = 0
 MAX_SCORE = (
