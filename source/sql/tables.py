@@ -40,7 +40,7 @@ class PrepareData(Base):
     ISSUECAPITALIZATION: Mapped[Optional[float]]
     TRENDISSUECAPITALIZATION: Mapped[Optional[float]]
     BOARDID: Mapped[Optional[str]]
-    VALUE: Mapped[Optional[float]]
+    LOTSIZE: Mapped[Optional[float]]
 
 
 class FilterData(Base):
@@ -70,7 +70,7 @@ class FilterData(Base):
     ISSUECAPITALIZATION: Mapped[Optional[float]]
     TRENDISSUECAPITALIZATION: Mapped[Optional[float]]
     BOARDID: Mapped[Optional[str]]
-    VALUE: Mapped[Optional[str]]
+    LOTSIZE: Mapped[Optional[str]]
     FILTER_SCORE: Mapped[Optional[float]]
     STATUS_FILTER: Mapped[Optional[str]]
 
@@ -96,7 +96,7 @@ class CurrentScore(Base):
     LCPRCNT_CUR: Mapped[Optional[float]]
     LMP_CUR: Mapped[Optional[float]]
     LAST: Mapped[Optional[float]]
-    VALUE: Mapped[Optional[float]]
+    LOTSIZE: Mapped[Optional[float]]
     FILTER_SCORE: Mapped[Optional[float]]
     STATUS_FILTER: Mapped[Optional[str]]
 
@@ -122,7 +122,7 @@ class StartScore(Base):
     LCPRCNT_CUR: Mapped[Optional[float]]
     LMP_CUR: Mapped[Optional[float]]
     LAST: Mapped[Optional[float]]
-    VALUE: Mapped[Optional[float]]
+    LOTSIZE: Mapped[Optional[float]]
     FILTER_SCORE: Mapped[Optional[float]]
     STATUS_FILTER: Mapped[Optional[str]]
 

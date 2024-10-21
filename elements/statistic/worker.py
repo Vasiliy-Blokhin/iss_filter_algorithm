@@ -51,8 +51,8 @@ class Statistic(JSONSaveAndRead, SQLmain):
                             if current['LAST'] > start['LAST']:
                                 count_positive += 1
 
-                            count_price_before += start['LAST']
-                            count_price_after += current['LAST']
+                            count_price_before += start['LAST'] * start['LOTSIZE']
+                            count_price_after += current['LAST'] * current['LOTSIZE']
                             count_all += 1
 
                 except Exception:
