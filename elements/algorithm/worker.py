@@ -28,7 +28,9 @@ from source.settings.settings import (
     IMOEX_URL,
     STATISTIC_NEED,
     NULL_DATA_ERROR,
-    BASE_DIR
+    BASE_DIR,
+    DELTA_COEFF,
+    HL_POINTS
 )
 from source.settings.module import interp_4_dote, interp_6_dote
 from source.settings.exceptions import NullData
@@ -77,10 +79,11 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 lctlw_max = LCTLWP_WP_POINTS * weight.get('LCTLWP_WP')
                 lcprcnt_max = LCPRCNT_POINTS * weight.get('LCPRCNT')
                 lmp_max = LMP_POINTS * weight.get('LMP')
+                hl_max = HL_POINTS * weight.get('HL')
 
                 max_weights = sum(
                     [wptpwp_max, lcp_max, pmpwp_max, tic_ic_max,
-                        lctlw_max, lcprcnt_max, lmp_max]
+                        lctlw_max, lcprcnt_max, lmp_max, hl_max]
                 )
 
                 param_score['WPTPWP_MAX'] = wptpwp_max
@@ -90,6 +93,7 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 param_score['LCPRCNT_MAX'] = lcprcnt_max
                 param_score['LMP_MAX'] = lmp_max
                 param_score['TIC_IC_MAX'] = tic_ic_max
+                param_score['HL_MAX'] = hl_max
 
 # start__________________________________________________________
 
@@ -108,11 +112,12 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                     lcp = lcp_max * weight['LCP']
                     current_score += lcp
                     param_score['LCP_CUR'] = lcp
-
                 elif share['LCURRENTPRICE'] < share['LAST']:
                     lcp = lcp_max * weight['LCP']
                     current_score -= lcp
-                    param_score['LCP_CUR'] = lcp
+                    param_score['LCP_CUR'] = -lcp
+                else:
+                    param_score['LCP_CUR'] = 0
 
 # _______________________________________________________________
 
@@ -163,18 +168,41 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 param_score['LCPRCNT_CUR'] = lcprcnt
 
 # _______________________________________________________________
-
+                lmp = lmp_max * weight['LMP']
                 if (
                     share.get('LAST') > share.get('MARKETPRICE')
                 ):
-                    lmp = lmp_max * weight['LMP']
                     current_score -= lmp
+                    param_score['LMP_CUR'] = -lmp
                 elif (
                     share.get('LAST') < share.get('MARKETPRICE')
                 ):
-                    lmp = lmp_max * weight['LMP']
                     current_score += lmp
-                param_score['LMP_CUR'] = lmp
+                    param_score['LMP_CUR'] = lmp
+                else:
+                    param_score['LMP_CUR'] = 0
+# _______________________________________________________________
+
+                delta_high = (1 - DELTA_COEFF) * share.get('HIGH')
+                delta_low = (1 + DELTA_COEFF) * share.get('LOW')
+                hl = hl_max * weight.get('HL')
+
+                if (
+                    delta_high * 1.01 > share.get('LAST')
+                    and delta_high * 0.99 < share.get('LAST')
+                    and share.get('LASTCHANGEPRCNT') < 0
+                ):
+                    current_score -= hl
+                    param_score['HL_CUR'] = -hl
+                elif (
+                    delta_low * 1.01 > share.get('LAST')
+                    and delta_low * 0.99 < share.get('LAST')
+                    and share.get('LASTCHANGEPRCNT') > 0
+                ):
+                    current_score += hl
+                    param_score['HL_CUR'] = hl
+                else:
+                    param_score['HL_CUR'] = 0
 # end____________________________________________________________
 
                 share['FILTER_SCORE'] = (
@@ -330,24 +358,3 @@ class Algorithm(JSONSaveAndRead, SQLmain):
             data=self.union_api_response(*data_list),
             table=tables.PrepareData
         )
-
-    @classmethod
-    def writing_result(self):
-        with open(file=BASE_DIR + '/result.txt', mode='r') as file:
-            file_text = file.read()
-            file.close()
-
-        text = '\n' + '_' * 250 + '\n'
-        text += 'time: ' + str(self.curent_msc_time())
-        text += '\nstart data: \n'
-        text += str(self.get_all_data(table=tables.StartScore))
-        text += '\ncurrent data: \n'
-        text += str(self.get_all_data(table=tables.CurrentScore))
-        text += '\ncurrent statistic: \n'
-        text += str(self.get_all_data(table=tables.AllStatistic)[-1])
-
-        file_text += text
-
-        with open(file=BASE_DIR + '/result.txt', mode='w') as file:
-            file_text = file.write(file_text)
-            file.close()

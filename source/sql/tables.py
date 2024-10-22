@@ -41,6 +41,8 @@ class PrepareData(Base):
     TRENDISSUECAPITALIZATION: Mapped[Optional[float]]
     BOARDID: Mapped[Optional[str]]
     LOTSIZE: Mapped[Optional[float]]
+    HIGH: Mapped[Optional[float]]
+    LOW: Mapped[Optional[float]]
 
 
 class FilterData(Base):
@@ -73,6 +75,8 @@ class FilterData(Base):
     LOTSIZE: Mapped[Optional[str]]
     FILTER_SCORE: Mapped[Optional[float]]
     STATUS_FILTER: Mapped[Optional[str]]
+    HIGH: Mapped[Optional[float]]
+    LOW: Mapped[Optional[float]]
 
 
 class CurrentScore(Base):
@@ -88,6 +92,7 @@ class CurrentScore(Base):
     LCTLWP_WP_MAX: Mapped[Optional[float]]
     LCPRCNT_MAX: Mapped[Optional[float]]
     LMP_MAX: Mapped[Optional[float]]
+    HL_MAX: Mapped[Optional[float]]
     WPTPWP_CUR: Mapped[Optional[float]]
     LCP_CUR: Mapped[Optional[float]]
     PMPWP_WP_CUR: Mapped[Optional[float]]
@@ -95,6 +100,7 @@ class CurrentScore(Base):
     LCTLWP_WP_CUR: Mapped[Optional[float]]
     LCPRCNT_CUR: Mapped[Optional[float]]
     LMP_CUR: Mapped[Optional[float]]
+    HL_CUR: Mapped[Optional[float]]
     LAST: Mapped[Optional[float]]
     LOTSIZE: Mapped[Optional[float]]
     FILTER_SCORE: Mapped[Optional[float]]
@@ -114,6 +120,7 @@ class StartScore(Base):
     LCTLWP_WP_MAX: Mapped[Optional[float]]
     LCPRCNT_MAX: Mapped[Optional[float]]
     LMP_MAX: Mapped[Optional[float]]
+    HL_MAX: Mapped[Optional[float]]
     WPTPWP_CUR: Mapped[Optional[float]]
     LCP_CUR: Mapped[Optional[float]]
     PMPWP_WP_CUR: Mapped[Optional[float]]
@@ -121,6 +128,7 @@ class StartScore(Base):
     LCTLWP_WP_CUR: Mapped[Optional[float]]
     LCPRCNT_CUR: Mapped[Optional[float]]
     LMP_CUR: Mapped[Optional[float]]
+    HL_CUR: Mapped[Optional[float]]
     LAST: Mapped[Optional[float]]
     LOTSIZE: Mapped[Optional[float]]
     FILTER_SCORE: Mapped[Optional[float]]
@@ -139,6 +147,7 @@ class Weights(Base):
     LCTLWP_WP: Mapped[Optional[float]]
     LCPRCNT: Mapped[Optional[float]]
     LMP: Mapped[Optional[float]]
+    HL: Mapped[Optional[float]]
 
 
 class AllStatistic(Base):
