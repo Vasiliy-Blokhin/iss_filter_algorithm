@@ -30,7 +30,8 @@ from source.settings.settings import (
     NULL_DATA_ERROR,
     BASE_DIR,
     DELTA_COEFF,
-    HL_POINTS
+    HL_POINTS,
+    SPLYT_SYMB
 )
 from source.settings.module import interp_4_dote, interp_6_dote
 from source.settings.exceptions import NullData
@@ -257,12 +258,21 @@ class Algorithm(JSONSaveAndRead, SQLmain):
             return False
         return True
 
-    @classmethod
-    def curent_msc_time(self):
+    @staticmethod
+    def curent_msc_time():
         timezone = 'Europe/Moscow'
         current_msc_time_h = datetime.now(pytz.timezone(timezone)).hour
         current_msc_time_m = datetime.now(pytz.timezone(timezone)).minute
         return current_msc_time_h + current_msc_time_m / 100
+
+    @staticmethod
+    def curent_data():
+        date = '{:%d-%m-%y}'.format(datetime.now()).split(SPLYT_SYMB)
+        return {
+            'day': date[0],
+            'month': date[1],
+            'year': date[2]
+        }
 
     @classmethod
     def is_not_work_time(self, current_time=None):
@@ -358,3 +368,9 @@ class Algorithm(JSONSaveAndRead, SQLmain):
             data=self.union_api_response(*data_list),
             table=tables.PrepareData
         )
+# __________________________________________________________
+# экспоненциальные скользящие средние 3, 5, 8 дней.
+
+    @classmethod
+    def exponential_moving_averages(self):
+        pass

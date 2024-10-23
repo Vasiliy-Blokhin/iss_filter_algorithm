@@ -15,5 +15,5 @@ A.insert_data(
             'HL': 1
         },
     ],
-    table=tables.Weights
+    table=tables.AllStatistic
 )

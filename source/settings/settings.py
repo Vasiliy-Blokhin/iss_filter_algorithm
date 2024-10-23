@@ -44,8 +44,8 @@ IMOEX_URL = (
 
 # Итерация работы.
 SET_ITERATION = 10
-TIME_RESPONSE = 60
-TIME_UPDATE = 540 - TIME_RESPONSE
+TIME_RESPONSE = 1
+TIME_UPDATE = 10 - TIME_RESPONSE
 START_VALUE = 0
 
 # Баллы по параметрам алгоритма.
@@ -96,3 +96,4 @@ MAX = [5, 15]
 MED = [-5, 5]
 
 NULL_DATA_ERROR = 'null_data'
+SPLYT_SYMB = '-'

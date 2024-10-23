@@ -33,6 +33,7 @@ class Statistic(JSONSaveAndRead, SQLmain):
     def make_statistic(self):
         # Расчет потенциального дохода.
         count_positive = 0
+        count_neutral = 0
         count_all = 0
         count_price_before = 0
         count_price_after = 0
@@ -50,6 +51,8 @@ class Statistic(JSONSaveAndRead, SQLmain):
                         if current['STATUS_FILTER'] == STATUS_UP:
                             if current['LAST'] > start['LAST']:
                                 count_positive += 1
+                            elif current['LAST'] == start['LAST']:
+                                count_neutral += 1
 
                             count_price_before += start['LAST'] * start['LOTSIZE']
                             count_price_after += current['LAST'] * current['LOTSIZE']
@@ -59,6 +62,7 @@ class Statistic(JSONSaveAndRead, SQLmain):
                     continue
         if count_all != 0:
             statistic_prcnt = float(100 * count_positive / count_all)
+            neutral_prcnt = float(100 * count_neutral / count_all)
         else:
             statistic_prcnt = 0
 
@@ -71,6 +75,7 @@ class Statistic(JSONSaveAndRead, SQLmain):
 
         return {
             'statistic_prcnt': statistic_prcnt,
+            'neutral_prcnt': neutral_prcnt,
             'potential_profitability': potential_profitability,
             'count_price_after': count_price_after
         }
@@ -99,7 +104,6 @@ class Statistic(JSONSaveAndRead, SQLmain):
                 or abs(statistic_prcnt) / 100 == COMISSION_COEFF
             ):
                 return False
-            print(current_statistic)
             self.append_data(
                 data=current_statistic,
                 table=tables.AllStatistic
