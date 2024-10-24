@@ -374,3 +374,4 @@ class Algorithm(JSONSaveAndRead, SQLmain):
     @classmethod
     def exponential_moving_averages(self):
         pass
+# __________________________________________________________

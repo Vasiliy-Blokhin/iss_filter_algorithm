@@ -26,24 +26,27 @@ class WEIGHTS(JSONSaveAndRead, SQLmain):
     @classmethod
     def weights_correct(self):
         start_data = self.get_all_data(tables.StartScore)
-        end_data = self.get_all_data(tables.CurrentScore)
         weights = self.get_all_data(tables.Weights)[0]
 
         for start_share in start_data:
-            for end_share in end_data:
-                try:
-                    weights_dict = self.weights_correct_body(
-                        start_share,
-                        end_share,
-                        weights
-                    )
-                    if weights_dict == {}:
-                        continue
-                    self.insert_data(weights_dict, tables.Weights)
-                except ZeroDivisionError:
+            try:
+                end_share = self.get_share_on_secid(
+                    table=tables.CurrentScore,
+                    secid=start_share['SECID']
+                )[0]
+
+                weights_dict = self.weights_correct_body(
+                    start_share,
+                    end_share,
+                    weights
+                )
+                if weights_dict == {}:
                     continue
-                except Exception as error:
-                    logger.error(error)
+                self.insert_data(weights_dict, tables.Weights)
+            except ZeroDivisionError:
+                continue
+            except Exception as error:
+                logger.error(error)
 
     @classmethod
     def weights_correct_body(
@@ -53,43 +56,42 @@ class WEIGHTS(JSONSaveAndRead, SQLmain):
         weights
     ):
         weights_dict = {}
-        if (start_share['SECID'] == end_share['SECID']):
-            for weights_name in WEIGHTS_PARAM:
-                weights_ratio = (
-                        start_share[
-                            weights_name + '_CUR'
-                        ] / start_share[weights_name + '_MAX']
+        for weights_name in WEIGHTS_PARAM:
+            weights_ratio = (
+                    start_share[
+                        weights_name + '_CUR'
+                    ] / start_share[weights_name + '_MAX']
+                )
+            if start_share['LAST'] < end_share['LAST']:
+                if weights_ratio > 0.7:
+                    weights_dict[weights_name] = (
+                        weights[weights_name] + self.get_rand_weight(MAX)
                     )
-                if start_share['LAST'] < end_share['LAST']:
-                    if weights_ratio > 0.7:
-                        weights_dict[weights_name] = (
-                            weights[weights_name] + self.get_rand_weight(MAX)
-                        )
-                    elif weights_ratio < 0.4:
-                        weights_dict[weights_name] = (
-                            weights[weights_name] + self.get_rand_weight(MIN)
-                        )
-                    else:
-                        weights_dict[weights_name] = (
-                            weights[weights_name] + self.get_rand_weight(MED)
-                        )
-                elif start_share['LAST'] > end_share['LAST']:
-                    if weights_ratio > 0.7:
-                        weights_dict[weights_name] = (
-                            weights[weights_name] + self.get_rand_weight(MIN)
-                        )
-                    elif weights_ratio < 0.4:
-                        weights_dict[weights_name] = (
-                            weights[weights_name] + self.get_rand_weight(MAX)
-                        )
-                    else:
-                        weights_dict[weights_name] = (
-                            weights[weights_name] + self.get_rand_weight(MED)
-                        )
+                elif weights_ratio < 0.4:
+                    weights_dict[weights_name] = (
+                        weights[weights_name] + self.get_rand_weight(MIN)
+                    )
                 else:
                     weights_dict[weights_name] = (
-                            weights[weights_name] + self.get_rand_weight(MED)
-                        )
+                        weights[weights_name] + self.get_rand_weight(MED)
+                    )
+            elif start_share['LAST'] > end_share['LAST']:
+                if weights_ratio > 0.7:
+                    weights_dict[weights_name] = (
+                        weights[weights_name] + self.get_rand_weight(MIN)
+                    )
+                elif weights_ratio < 0.4:
+                    weights_dict[weights_name] = (
+                        weights[weights_name] + self.get_rand_weight(MAX)
+                    )
+                else:
+                    weights_dict[weights_name] = (
+                        weights[weights_name] + self.get_rand_weight(MED)
+                    )
+            else:
+                weights_dict[weights_name] = (
+                        weights[weights_name] + self.get_rand_weight(MED)
+                    )
         return weights_dict
 
     # Значения для корректировки весов.

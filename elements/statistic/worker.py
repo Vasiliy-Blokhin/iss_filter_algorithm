@@ -39,27 +39,31 @@ class Statistic(JSONSaveAndRead, SQLmain):
         count_price_after = 0
 
         for start in self.get_all_data(tables.StartScore):
-            for current in self.get_all_data(tables.CurrentScore):
-                try:
-                    if start['SECID'] == current['SECID']:
-                        if (
-                            start['LAST'] is None
-                            or start['LAST'] == 0
-                        ):
-                            continue
+            try:
+                current = self.get_share_on_secid(
+                    table=tables.CurrentScore,
+                    secid=start['SECID']
+                )[0]
 
-                        if current['STATUS_FILTER'] == STATUS_UP:
-                            if current['LAST'] > start['LAST']:
-                                count_positive += 1
-                            elif current['LAST'] == start['LAST']:
-                                count_neutral += 1
+                if start['SECID'] == current['SECID']:
+                    if (
+                        start['LAST'] is None
+                        or start['LAST'] == 0
+                    ):
+                        continue
 
-                            count_price_before += start['LAST'] * start['LOTSIZE']
-                            count_price_after += current['LAST'] * current['LOTSIZE']
-                            count_all += 1
+                    if current['STATUS_FILTER'] == STATUS_UP:
+                        if current['LAST'] > start['LAST']:
+                            count_positive += 1
+                        elif current['LAST'] == start['LAST']:
+                            count_neutral += 1
 
-                except Exception:
-                    continue
+                        count_price_before += start['LAST'] * start['LOTSIZE']
+                        count_price_after += current['LAST'] * current['LOTSIZE']
+                        count_all += 1
+
+            except Exception:
+                continue
         if count_all != 0:
             statistic_prcnt = float(100 * count_positive / count_all)
             neutral_prcnt = float(100 * count_neutral / count_all)

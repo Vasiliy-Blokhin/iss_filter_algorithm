@@ -52,3 +52,15 @@ class SQLmain:
             for el in result:
                 data.append(el._asdict())
             return data
+
+    @staticmethod
+    def get_share_on_secid(table, secid):
+        with Session(bind=main_engine) as s:
+            result = s.execute(
+                sa.select('*').select_from(table).where(table.SECID == secid)
+            )
+
+            data = []
+            for el in result:
+                data.append(el._asdict())
+            return data
