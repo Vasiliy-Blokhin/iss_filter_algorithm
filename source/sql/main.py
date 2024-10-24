@@ -41,26 +41,25 @@ class SQLmain:
             s.execute(sa.insert(table).values(data))
             s.commit()
 
-    @staticmethod
-    def get_all_data(table):
+    @classmethod
+    def get_all_data(self, table):
         with Session(bind=main_engine) as s:
-            result = s.execute(
+
+            return self.correct_data_in_dict(data=s.execute(
                 sa.select('*').select_from(table)
-            ).all()
+            ).all())
 
-            data = []
-            for el in result:
-                data.append(el._asdict())
-            return data
+    @classmethod
+    def get_share_on_secid(self, table, secid):
+        with Session(bind=main_engine) as s:
+
+            return self.correct_data_in_dict(data=s.execute(
+                sa.select('*').select_from(table).where(table.SECID == secid)
+            ))
 
     @staticmethod
-    def get_share_on_secid(table, secid):
-        with Session(bind=main_engine) as s:
-            result = s.execute(
-                sa.select('*').select_from(table).where(table.SECID == secid)
-            )
-
-            data = []
-            for el in result:
-                data.append(el._asdict())
-            return data
+    def correct_data_in_dict(data):
+        result = []
+        for el in data:
+            result.append(el._asdict())
+        return result
