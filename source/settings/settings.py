@@ -45,7 +45,7 @@ IMOEX_URL = (
 # Итерация работы.
 SET_ITERATION = 10
 TIME_RESPONSE = 60
-TIME_UPDATE = 540 - TIME_RESPONSE
+TIME_UPDATE = 660 - TIME_RESPONSE
 START_VALUE = 0
 
 # Баллы по параметрам алгоритма.
@@ -73,7 +73,7 @@ MAX_SCORE = (
 # Абстрактное увеличение результата для выборки
 ABSTRACT_COEFF = 1
 # Границы допуска.
-BORDERS_SCORE = 80
+BORDERS_SCORE = 78
 
 SIZE_F_MAX_SCORE_RESULT = 10
 
