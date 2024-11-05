@@ -69,6 +69,7 @@ class Statistic(JSONSaveAndRead, SQLmain):
             neutral_prcnt = float(100 * count_neutral / count_all)
         else:
             statistic_prcnt = 0
+            neutral_prcnt = 0
 
         comission = count_price_after * COMISSION_COEFF
         potential_profitability = (
