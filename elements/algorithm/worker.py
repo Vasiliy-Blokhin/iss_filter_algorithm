@@ -300,32 +300,36 @@ class Algorithm(JSONSaveAndRead, SQLmain):
         return data
 
     @classmethod
-    def api_response_filter(self, type_data):
+    def data_prepare(self):
         """ Фильтрация данных, полученных с запроса."""
         result = []
-        # Получение и проверка данных.
-        resp = self.get_api_response(
-            url=IMOEX_URL
-        )
+        data_list = []
         logger.info('get response info from ISS')
         # Фильтрация полученных данных (из разных "графов").
-        for element in resp[1][type_data]:
-            # Оставляет только акции.
-            if (
-                type_data == 'securities'
-                and element.get('INSTRID') != 'EQIN'
-            ):
-                continue
-            if element.get('BOARDID') not in SHARE_GROUPS:
-                continue
-            new_dict = {}
-            # Добавление только необходимых параметров из списка.
-            for key, value in element.items():
-                if key in NEEDFUL:
-                    new_dict[key] = value
-            result.append(new_dict)
-        # Проверка и вывод результатов.
-        return result
+        for type_data in TYPE_DATA_IMOEX:
+            for element in self.get_api_response(
+                url=IMOEX_URL
+            )[1][type_data]:
+                # Оставляет только акции.
+                if (
+                    type_data == 'securities'
+                    and element.get('INSTRID') != 'EQIN'
+                ):
+                    continue
+                if element.get('BOARDID') not in SHARE_GROUPS:
+                    continue
+                new_dict = {}
+                # Добавление только необходимых параметров из списка.
+                for key, value in element.items():
+                    if key in NEEDFUL:
+                        new_dict[key] = value
+                data_list.append(new_dict)
+            result.append(data_list)
+
+        self.insert_data(
+            data=self.union_api_response(*result),
+            table=tables.PrepareData
+        )
 
     @classmethod
     def union_api_response(self, data_sec, data_md):
@@ -355,19 +359,6 @@ class Algorithm(JSONSaveAndRead, SQLmain):
 
         return self.sorted_data(result)
 
-    @classmethod
-    def data_prepare(self):
-        """ Получение и формированией всей базы данных."""
-        data_list = []
-        for type_data in TYPE_DATA_IMOEX:
-            data = self.api_response_filter(type_data)
-            data_list.append(data)
-        # Сведение БД и сохранение.
-
-        self.insert_data(
-            data=self.union_api_response(*data_list),
-            table=tables.PrepareData
-        )
 # __________________________________________________________
 # экспоненциальные скользящие средние 3, 5, 8 дней.
 

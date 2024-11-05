@@ -41,8 +41,6 @@ class JSONSaveAndRead():
             return requests.get(url, headers=headers).json()
         except json.decoder.JSONDecodeError:
             return []
-        finally:
-            sleep(TIME_RESPONSE)
 
     @classmethod
     def save_file(cls, data, file=None):
