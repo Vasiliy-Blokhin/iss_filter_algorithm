@@ -19,6 +19,7 @@ logger.addHandler(handler)
 if __name__ == '__main__':
     counter = START_VALUE
     flag_prepare_data = True
+    flag_daily_exp_mov_aver = True
     a.create_all_tables()
     while True:
         try:
@@ -30,12 +31,17 @@ if __name__ == '__main__':
             a.data_prepare()
             logger.info('data prepare success')
             if a.is_trade_time():
+                if flag_daily_exp_mov_aver:
+                    a.exp_mov_aver_daily_counting()
+                    flag_daily_exp_mov_aver = False
+                    logger.info('exp mov aver counting success')
+
                 if a.data_filter() == NULL_DATA_ERROR:
                     flag_prepare_data = True
                     counter = START_VALUE
                     continue
-
                 logger.info('data filter success')
+
                 if flag_prepare_data:
                     s.prepare_start_data()
                     flag_prepare_data = False
@@ -52,6 +58,7 @@ if __name__ == '__main__':
                     counter = START_VALUE
             else:
                 flag_prepare_data = True
+                flag_daily_exp_mov_aver = True
                 counter = START_VALUE
         except Exception as error:
             logger.error(error)

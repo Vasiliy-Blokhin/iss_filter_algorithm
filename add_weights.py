@@ -5,15 +5,14 @@ import source.sql.tables as tables
 A.insert_data(
     data=[
         {
-            'WPTPWP': 1,
-            'LCP': 1,
-            'PMPWP_WP': 1.1,
-            'TIC_IC': 0.8,
-            'LCTLWP_WP': 1,
-            'LCPRCNT': 1.2,
-            'LMP': 1.1,
-            'HL': 1
+            'WPTPWP': 1.05,
+            'LCP': 1.1,
+            'PMPWP_WP': 1.14,
+            'LCTLWP_WP': 0.97,
+            'LCPRCNT': 1.15,
+            'LMP': 1.2,
+            'EMA': 1
         },
     ],
-    table=tables.AllStatistic
+    table=tables.Weights
 )
