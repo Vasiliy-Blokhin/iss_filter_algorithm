@@ -43,9 +43,8 @@ IMOEX_URL = (
 
 
 # Итерация работы.
-SET_ITERATION = 10
-TIME_RESPONSE = 60
-TIME_UPDATE = 660 - TIME_RESPONSE
+SET_ITERATION = 3
+TIME_UPDATE = 6
 START_VALUE = 0
 
 # Баллы по параметрам алгоритма.

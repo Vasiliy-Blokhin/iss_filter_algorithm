@@ -1,10 +1,8 @@
 import requests
 import json
 import logging
-from time import sleep
 
 from source.settings.settings import (
-    TIME_RESPONSE,
     handler
 )
 

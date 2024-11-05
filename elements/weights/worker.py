@@ -28,6 +28,9 @@ class WEIGHTS(JSONSaveAndRead, SQLmain):
         start_data = self.get_all_data(tables.StartScore)
         weights = self.get_all_data(tables.Weights)[0]
 
+        min_delta_weight = self.get_rand_weight(MIN)
+        max_delta_weight = self.get_rand_weight(MAX)
+        med_delta_weight = self.get_rand_weight(MED)
         for start_share in start_data:
             try:
                 end_share = self.get_share_on_secid(
@@ -38,7 +41,10 @@ class WEIGHTS(JSONSaveAndRead, SQLmain):
                 weights_dict = self.weights_correct_body(
                     start_share,
                     end_share,
-                    weights
+                    weights,
+                    min_delta_weight,
+                    max_delta_weight,
+                    med_delta_weight,
                 )
                 if weights_dict == {}:
                     continue
@@ -53,7 +59,10 @@ class WEIGHTS(JSONSaveAndRead, SQLmain):
         self,
         start_share,
         end_share,
-        weights
+        weights,
+        min_delta_weight,
+        max_delta_weight,
+        med_delta_weight,
     ):
         weights_dict = {}
         for weights_name in WEIGHTS_PARAM:
@@ -65,32 +74,32 @@ class WEIGHTS(JSONSaveAndRead, SQLmain):
             if start_share['LAST'] < end_share['LAST']:
                 if weights_ratio > 0.7:
                     weights_dict[weights_name] = (
-                        weights[weights_name] + self.get_rand_weight(MAX)
+                        weights[weights_name] + max_delta_weight
                     )
                 elif weights_ratio < 0.4:
                     weights_dict[weights_name] = (
-                        weights[weights_name] + self.get_rand_weight(MIN)
+                        weights[weights_name] + min_delta_weight
                     )
                 else:
                     weights_dict[weights_name] = (
-                        weights[weights_name] + self.get_rand_weight(MED)
+                        weights[weights_name] + med_delta_weight
                     )
             elif start_share['LAST'] > end_share['LAST']:
                 if weights_ratio > 0.7:
                     weights_dict[weights_name] = (
-                        weights[weights_name] + self.get_rand_weight(MIN)
+                        weights[weights_name] + min_delta_weight
                     )
                 elif weights_ratio < 0.4:
                     weights_dict[weights_name] = (
-                        weights[weights_name] + self.get_rand_weight(MAX)
+                        weights[weights_name] + max_delta_weight
                     )
                 else:
                     weights_dict[weights_name] = (
-                        weights[weights_name] + self.get_rand_weight(MED)
+                        weights[weights_name] + med_delta_weight
                     )
             else:
                 weights_dict[weights_name] = (
-                        weights[weights_name] + self.get_rand_weight(MED)
+                        weights[weights_name] + med_delta_weight
                     )
         return weights_dict
 
@@ -121,10 +130,6 @@ class WEIGHTS(JSONSaveAndRead, SQLmain):
                         continue
             prcnt_statistic = all_success / len(data)
             median_profit = all_profit / len(data)
-            logger.info(
-                f'percent: {prcnt_statistic}; '
-                f'median profit: {median_profit};'
-            )
             return [prcnt_statistic, median_profit]
         except ZeroDivisionError:
             return [0, 0]
