@@ -31,7 +31,7 @@ TYPE_DATA_IMOEX = ['securities', 'marketdata']
 SHARE_GROUPS = ['EQBR', 'EQBS', 'EQCC', 'TQBR']
 
 WEIGHTS_PARAM = [
-    'WPTPWP', 'LCP', 'PMPWP_WP', 'TIC_IC', 'LCTLWP_WP', 'LCPRCNT', 'LMP', 'HL'
+    'WPTPWP', 'LCP', 'PMPWP_WP', 'LCTLWP_WP', 'LCPRCNT', 'LMP'
 ]
 STOP_TRADING = 'торги приостановлены'
 RUN_TRADING = 'торги идут'
@@ -52,11 +52,9 @@ START_VALUE = 0
 WPTPWP_POINTS = 5
 LCP_POINTS = 5
 PMPWP_WP_POINTS = 8
-TIC_IC_POINTS = 10
 LCTLWP_WP_POINTS = 5
 LCPRCNT_POINTS = 5
 LMP_POINTS = 15
-HL_POINTS = 5
 
 # Коэффициенты для работы алгоритма и статистики.
 # Комиссия на оборот.
@@ -66,9 +64,9 @@ DELTA_COEFF = 0.15
 BUY_COEFF = 0
 MAX_SCORE = (
     abs(WPTPWP_POINTS) + abs(LCP_POINTS) +
-    abs(PMPWP_WP_POINTS) + abs(TIC_IC_POINTS) +
+    abs(PMPWP_WP_POINTS) +
     abs(LCTLWP_WP_POINTS) + abs(LCPRCNT_POINTS) +
-    abs(LMP_POINTS) + abs(HL_POINTS)
+    abs(LMP_POINTS)
 )
 # Абстрактное увеличение результата для выборки
 ABSTRACT_COEFF = 1

@@ -14,7 +14,6 @@ from source.settings.settings import (
     WPTPWP_POINTS,
     LCP_POINTS,
     PMPWP_WP_POINTS,
-    TIC_IC_POINTS,
     LCTLWP_WP_POINTS,
     LCPRCNT_POINTS,
     ABSTRACT_COEFF,
@@ -28,9 +27,6 @@ from source.settings.settings import (
     IMOEX_URL,
     STATISTIC_NEED,
     NULL_DATA_ERROR,
-    BASE_DIR,
-    DELTA_COEFF,
-    HL_POINTS,
     SPLYT_SYMB
 )
 from source.settings.module import interp_4_dote, interp_6_dote
@@ -76,15 +72,13 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 wptpwp_max = WPTPWP_POINTS * weight.get('WPTPWP')
                 lcp_max = LCP_POINTS * weight.get('LCP')
                 pmpwp_max = PMPWP_WP_POINTS * weight.get('PMPWP_WP')
-                tic_ic_max = TIC_IC_POINTS * weight.get('TIC_IC')
                 lctlw_max = LCTLWP_WP_POINTS * weight.get('LCTLWP_WP')
                 lcprcnt_max = LCPRCNT_POINTS * weight.get('LCPRCNT')
                 lmp_max = LMP_POINTS * weight.get('LMP')
-                hl_max = HL_POINTS * weight.get('HL')
 
                 max_weights = sum(
-                    [wptpwp_max, lcp_max, pmpwp_max, tic_ic_max,
-                        lctlw_max, lcprcnt_max, lmp_max, hl_max]
+                    [wptpwp_max, lcp_max, pmpwp_max,
+                        lctlw_max, lcprcnt_max, lmp_max]
                 )
 
                 param_score['WPTPWP_MAX'] = wptpwp_max
@@ -93,8 +87,6 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 param_score['LCTLWP_WP_MAX'] = lctlw_max
                 param_score['LCPRCNT_MAX'] = lcprcnt_max
                 param_score['LMP_MAX'] = lmp_max
-                param_score['TIC_IC_MAX'] = tic_ic_max
-                param_score['HL_MAX'] = hl_max
 
 # start__________________________________________________________
 
@@ -130,22 +122,6 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 ) * weight['PMPWP_WP']
                 current_score += pmpwp_wp
                 param_score['PMPWP_WP_CUR'] = pmpwp_wp
-
-# _______________________________________________________________
-
-                capitalization_diff = (
-                    share['TRENDISSUECAPITALIZATION']
-                    / share['ISSUECAPITALIZATION']
-                )
-                tic_ic = interp_4_dote(
-                    dote_prcnt=capitalization_diff,
-                    point_limits=[-tic_ic_max, tic_ic_max],
-                    prcnt_limits=[-4, 4],
-                    prcnt_start_limit=0.3
-                ) * weight['TIC_IC']
-                current_score += tic_ic
-                param_score['TIC_IC_CUR'] = tic_ic
-
 # _______________________________________________________________
 
                 lctlwp_wp = -interp_6_dote(
@@ -182,28 +158,6 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                     param_score['LMP_CUR'] = lmp
                 else:
                     param_score['LMP_CUR'] = 0
-# _______________________________________________________________
-
-                delta_high = (1 - DELTA_COEFF) * share.get('HIGH')
-                delta_low = (1 + DELTA_COEFF) * share.get('LOW')
-                hl = hl_max * weight.get('HL')
-
-                if (
-                    delta_high * 1.01 > share.get('LAST')
-                    and delta_high * 0.99 < share.get('LAST')
-                    and share.get('LASTCHANGEPRCNT') < 0
-                ):
-                    current_score -= hl
-                    param_score['HL_CUR'] = -hl
-                elif (
-                    delta_low * 1.01 > share.get('LAST')
-                    and delta_low * 0.99 < share.get('LAST')
-                    and share.get('LASTCHANGEPRCNT') > 0
-                ):
-                    current_score += hl
-                    param_score['HL_CUR'] = hl
-                else:
-                    param_score['HL_CUR'] = 0
 # end____________________________________________________________
 
                 share['FILTER_SCORE'] = (
