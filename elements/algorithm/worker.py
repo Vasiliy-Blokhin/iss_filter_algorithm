@@ -150,12 +150,12 @@ class Algorithm(JSONSaveAndRead, SQLmain):
 # _______________________________________________________________
                 lmp = lmp_max * weight['LMP']
                 if (
-                    share.get('LAST') > share.get('MARKETPRICE')
+                    share.get('LCURRENTPRICE') > share.get('MARKETPRICE')
                 ):
                     current_score -= lmp
                     param_score['LMP_CUR'] = -lmp
                 elif (
-                    share.get('LAST') < share.get('MARKETPRICE')
+                    share.get('LCURRENTPRICE') < share.get('MARKETPRICE')
                 ):
                     current_score += lmp
                     param_score['LMP_CUR'] = lmp

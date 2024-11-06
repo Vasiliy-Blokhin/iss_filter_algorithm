@@ -71,7 +71,7 @@ class WEIGHTS(JSONSaveAndRead, SQLmain):
                         weights_name + '_CUR'
                     ] / start_share[weights_name + '_MAX']
                 )
-            if start_share['LAST'] < end_share['LAST']:
+            if start_share['LCURRENTPRICE'] < end_share['LCURRENTPRICE']:
                 if weights_ratio > 0.7:
                     weights_dict[weights_name] = (
                         weights[weights_name] + max_delta_weight
@@ -84,7 +84,7 @@ class WEIGHTS(JSONSaveAndRead, SQLmain):
                     weights_dict[weights_name] = (
                         weights[weights_name] + med_delta_weight
                     )
-            elif start_share['LAST'] > end_share['LAST']:
+            elif start_share['LCURRENTPRICE'] > end_share['LCURRENTPRICE']:
                 if weights_ratio > 0.7:
                     weights_dict[weights_name] = (
                         weights[weights_name] + min_delta_weight
