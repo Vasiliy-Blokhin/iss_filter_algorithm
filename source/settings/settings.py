@@ -25,7 +25,7 @@ NEEDFUL = [
     'TRENDISSUECAPITALIZATION', 'BOARDID', 'LOTSIZE', 'HIGH', 'LOW'
 ]
 STATISTIC_NEED = [
-    'SECID', 'STATUS_FILTER', 'LAST', 'FILTER_SCORE', 'LOTSIZE'
+    'SECID', 'STATUS_FILTER', 'LCURRENTPRICE', 'FILTER_SCORE', 'LOTSIZE'
 ]
 TYPE_DATA_IMOEX = ['securities', 'marketdata']
 SHARE_GROUPS = ['EQBR', 'EQBS', 'EQCC', 'TQBR']
@@ -44,8 +44,8 @@ IMOEX_URL = (
 
 
 # Итерация работы.
-SET_ITERATION = 10
-TIME_UPDATE = 720
+SET_ITERATION = 3
+TIME_UPDATE = 5
 START_VALUE = 0
 
 # Баллы по параметрам алгоритма.
@@ -96,3 +96,15 @@ MED = [-5, 5]
 
 NULL_DATA_ERROR = 'null_data'
 SPLYT_SYMB = '-'
+
+TELEGRAM_TOKEN = getenv('TLG_NOTICE_TOKEN')
+TELEGRAM_CHAT_ID = getenv('TLG_NOTICE_CHAT_ID')
+TELEGRAM_URL = (
+    'https://api.telegram.org/bot'
+    f'{TELEGRAM_TOKEN}/sendMessage?chat_id='
+    f'{TELEGRAM_CHAT_ID}&text='
+)
+
+END_INTERATION_MESSAGE = 'Итерация выполнена успешно.'
+ERROR_MESSAGE = 'Получена ошибка - '
+START_MESSAGE = '---Project: iss_filter_algorythm---\n'

@@ -3,12 +3,15 @@ from time import sleep
 from elements.algorithm.worker import Algorithm as a
 from elements.statistic.worker import Statistic as s
 from elements.weights.worker import WEIGHTS as w
+from elements.notification.worker import TelegramNotification as tlg
 from source.settings.settings import (
     handler,
     TIME_UPDATE,
     SET_ITERATION,
     START_VALUE,
-    NULL_DATA_ERROR
+    NULL_DATA_ERROR,
+    END_INTERATION_MESSAGE,
+    ERROR_MESSAGE    
 )
 # Запуск логгера.
 logger = logging.getLogger(name=__name__)
@@ -53,6 +56,7 @@ if __name__ == '__main__':
                     logger.info('weights counter success')
                     s.result_statistic()
                     logger.info('counting statistic success')
+                    tlg.send_message(text=END_INTERATION_MESSAGE)
 
                     flag_prepare_data = True
                     counter = START_VALUE
@@ -61,6 +65,7 @@ if __name__ == '__main__':
                 flag_daily_exp_mov_aver = True
                 counter = START_VALUE
         except Exception as error:
+            tlg.send_message(text=ERROR_MESSAGE + error)
             logger.error(error)
         finally:
             logger.info(f'Итерация # {counter} окончена')
