@@ -11,8 +11,10 @@ from source.settings.settings import (
     START_VALUE,
     NULL_DATA_ERROR,
     END_INTERATION_MESSAGE,
-    ERROR_MESSAGE    
+    ERROR_MESSAGE,
+    EMPTY_STATISTIC_MESSAGE
 )
+from source.settings.exceptions import NullData
 # Запуск логгера.
 logger = logging.getLogger(name=__name__)
 logger.setLevel(logging.DEBUG)
@@ -54,7 +56,8 @@ if __name__ == '__main__':
                 if counter >= SET_ITERATION:
                     w.weights_correct()
                     logger.info('weights counter success')
-                    s.result_statistic()
+                    if not s.result_statistic():
+                        raise NullData
                     logger.info('counting statistic success')
                     tlg.send_message(text=END_INTERATION_MESSAGE)
 
@@ -64,6 +67,9 @@ if __name__ == '__main__':
                 flag_prepare_data = True
                 flag_daily_exp_mov_aver = True
                 counter = START_VALUE
+        except NullData:
+            tlg.send_message(text=EMPTY_STATISTIC_MESSAGE)
+            logger.error(EMPTY_STATISTIC_MESSAGE)
         except Exception as error:
             tlg.send_message(text=ERROR_MESSAGE + error)
             logger.error(error)

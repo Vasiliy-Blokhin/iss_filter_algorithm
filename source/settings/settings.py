@@ -107,4 +107,5 @@ TELEGRAM_URL = (
 
 END_INTERATION_MESSAGE = 'Итерация выполнена успешно.'
 ERROR_MESSAGE = 'Получена ошибка - '
+EMPTY_STATISTIC_MESSAGE = 'Статистика не собрана.'
 START_MESSAGE = '---Project: iss_filter_algorythm---\n'
