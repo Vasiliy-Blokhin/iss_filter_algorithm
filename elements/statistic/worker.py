@@ -99,6 +99,7 @@ class Statistic(JSONSaveAndRead, SQLmain):
     def result_statistic(self):
         try:
             current_statistic = self.make_statistic()
+            logger.info('current stat' + current_statistic)
             statistic_prcnt = round(
                 100 * current_statistic[
                     'potential_profitability'
