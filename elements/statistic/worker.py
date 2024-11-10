@@ -64,12 +64,17 @@ class Statistic(JSONSaveAndRead, SQLmain):
 
             except Exception:
                 continue
-        if count_all != 0:
-            statistic_prcnt = float(100 * count_positive / count_all)
-            neutral_prcnt = float(100 * count_neutral / count_all)
-        else:
-            statistic_prcnt = 0
-            neutral_prcnt = 0
+
+        if count_all == 0:
+            return {
+                'statistic_prcnt': 0,
+                'neutral_prcnt': 0,
+                'potential_profitability': 0,
+                'count_price_after': 0
+            }
+
+        statistic_prcnt = float(100 * count_positive / count_all)
+        neutral_prcnt = float(100 * count_neutral / count_all)
 
         comission = count_price_after * COMISSION_COEFF
         potential_profitability = (
@@ -91,6 +96,7 @@ class Statistic(JSONSaveAndRead, SQLmain):
             data['potential_profitability'] == 0
             or data['statistic_prcnt'] == 0
             or data['count_price_after'] == 0
+            or data['neutral_prcnt'] == 0
         ):
             return True
         return False
@@ -99,7 +105,7 @@ class Statistic(JSONSaveAndRead, SQLmain):
     def result_statistic(self):
         try:
             current_statistic = self.make_statistic()
-            logger.info('current stat' + current_statistic)
+            logger.info(f'current stat - {current_statistic}')
             statistic_prcnt = round(
                 100 * current_statistic[
                     'potential_profitability'

@@ -12,7 +12,8 @@ from source.settings.settings import (
     NULL_DATA_ERROR,
     END_INTERATION_MESSAGE,
     ERROR_MESSAGE,
-    EMPTY_STATISTIC_MESSAGE
+    EMPTY_STATISTIC_MESSAGE,
+    DAILY_EXP_MOV_MESSAGE
 )
 from source.settings.exceptions import NullData
 # Запуск логгера.
@@ -25,6 +26,7 @@ if __name__ == '__main__':
     counter = START_VALUE
     flag_prepare_data = True
     flag_daily_exp_mov_aver = True
+    cur_day = a.curent_data()['day']
     a.create_all_tables()
     while True:
         try:
@@ -39,7 +41,9 @@ if __name__ == '__main__':
                 if flag_daily_exp_mov_aver:
                     a.exp_mov_aver_daily_counting()
                     flag_daily_exp_mov_aver = False
-                    logger.info('exp mov aver counting success')
+                    tlg.send_message(text=DAILY_EXP_MOV_MESSAGE)
+                if cur_day != a.curent_data()['day']:
+                    flag_daily_exp_mov_aver = True
 
                 if a.data_filter() == NULL_DATA_ERROR:
                     flag_prepare_data = True
@@ -58,18 +62,15 @@ if __name__ == '__main__':
                     logger.info('weights counter success')
                     if not s.result_statistic():
                         raise NullData
-                    logger.info('counting statistic success')
                     tlg.send_message(text=END_INTERATION_MESSAGE)
 
                     flag_prepare_data = True
                     counter = START_VALUE
             else:
                 flag_prepare_data = True
-                flag_daily_exp_mov_aver = True
                 counter = START_VALUE
         except NullData:
             tlg.send_message(text=EMPTY_STATISTIC_MESSAGE)
-            logger.error(EMPTY_STATISTIC_MESSAGE)
         except Exception as error:
             tlg.send_message(text=ERROR_MESSAGE + error)
             logger.error(error)
