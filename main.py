@@ -43,6 +43,7 @@ if __name__ == '__main__':
                     flag_daily_exp_mov_aver = False
                     tlg.send_message(text=DAILY_EXP_MOV_MESSAGE)
                 if cur_day != a.curent_data()['day']:
+                    cur_day = a.curent_data()['day']
                     flag_daily_exp_mov_aver = True
 
                 if a.data_filter() == NULL_DATA_ERROR:
