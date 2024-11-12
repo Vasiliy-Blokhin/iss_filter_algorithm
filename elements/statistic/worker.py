@@ -24,10 +24,13 @@ class Statistic(JSONSaveAndRead, SQLmain):
 
     @classmethod
     def prepare_start_data(self):
-        self.insert_data(
-            data=self.get_all_data(table=tables.CurrentScore),
-            table=tables.StartScore
-        )
+        try:
+            self.insert_data(
+                data=self.get_all_data(table=tables.CurrentScore),
+                table=tables.StartScore
+            )
+        except Exception as error:
+            logger.error(error)
 
     @classmethod
     def make_statistic(self):
