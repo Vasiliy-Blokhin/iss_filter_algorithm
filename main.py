@@ -59,14 +59,15 @@ if __name__ == '__main__':
 
                 counter += 1
                 if counter >= SET_ITERATION:
+                    flag_prepare_data = True
+                    counter = START_VALUE
+
                     w.weights_correct()
                     logger.info('weights counter success')
                     if not s.result_statistic():
                         raise NullData
                     tlg.send_message(text=END_INTERATION_MESSAGE)
 
-                    flag_prepare_data = True
-                    counter = START_VALUE
             else:
                 flag_prepare_data = True
                 counter = START_VALUE

@@ -72,7 +72,7 @@ MAX_SCORE = (
 # Абстрактное увеличение результата для выборки
 ABSTRACT_COEFF = 1
 # Границы допуска.
-BORDERS_SCORE = 78
+BORDERS_SCORE = 75
 
 SIZE_F_MAX_SCORE_RESULT = 10
 

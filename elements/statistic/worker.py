@@ -45,22 +45,20 @@ class Statistic(JSONSaveAndRead, SQLmain):
                     secid=start['SECID']
                 )[0]
 
-                if start['SECID'] == current['SECID']:
-                    if (
-                        start['LAST'] is None
-                        or start['LAST'] == 0
-                    ):
-                        continue
+                if (
+                    start['LAST'] is None
+                    or start['LAST'] == 0
+                ):
+                    continue
 
-                    if current['STATUS_FILTER'] == STATUS_UP:
-                        if current['LAST'] > start['LAST']:
-                            count_positive += 1
-                        elif current['LAST'] == start['LAST']:
-                            count_neutral += 1
+                if current['LAST'] > start['LAST']:
+                    count_positive += 1
+                elif current['LAST'] == start['LAST']:
+                    count_neutral += 1
 
-                        count_price_before += start['LAST'] * start['LOTSIZE']
-                        count_price_after += current['LAST'] * current['LOTSIZE']
-                        count_all += 1
+                count_price_before += start['LAST'] * start['LOTSIZE']
+                count_price_after += current['LAST'] * current['LOTSIZE']
+                count_all += 1
 
             except Exception:
                 continue
@@ -93,10 +91,7 @@ class Statistic(JSONSaveAndRead, SQLmain):
     @staticmethod
     def is_null_result(data):
         if (
-            data['potential_profitability'] == 0
-            or data['statistic_prcnt'] == 0
-            or data['count_price_after'] == 0
-            or data['neutral_prcnt'] == 0
+            data['count_price_after'] == 0
         ):
             return True
         return False
