@@ -25,7 +25,7 @@ NEEDFUL = [
     'TRENDISSUECAPITALIZATION', 'BOARDID', 'LOTSIZE', 'HIGH', 'LOW'
 ]
 STATISTIC_NEED = [
-    'SECID', 'STATUS_FILTER', 'LCURRENTPRICE', 'FILTER_SCORE', 'LOTSIZE'
+    'SECID', 'STATUS_FILTER', 'LAST', 'FILTER_SCORE', 'LOTSIZE'
 ]
 TYPE_DATA_IMOEX = ['securities', 'marketdata']
 SHARE_GROUPS = ['EQBR', 'EQBS', 'EQCC', 'TQBR']
@@ -45,7 +45,7 @@ IMOEX_URL = (
 
 # Итерация работы.
 SET_ITERATION = 10
-TIME_UPDATE = 720
+TIME_UPDATE = 600
 START_VALUE = 0
 
 # Баллы по параметрам алгоритма.

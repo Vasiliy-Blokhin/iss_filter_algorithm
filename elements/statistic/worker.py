@@ -47,19 +47,19 @@ class Statistic(JSONSaveAndRead, SQLmain):
 
                 if start['SECID'] == current['SECID']:
                     if (
-                        start['LCURRENTPRICE'] is None
-                        or start['LCURRENTPRICE'] == 0
+                        start['LAST'] is None
+                        or start['LAST'] == 0
                     ):
                         continue
 
                     if current['STATUS_FILTER'] == STATUS_UP:
-                        if current['LCURRENTPRICE'] > start['LCURRENTPRICE']:
+                        if current['LAST'] > start['LAST']:
                             count_positive += 1
-                        elif current['LCURRENTPRICE'] == start['LCURRENTPRICE']:
+                        elif current['LAST'] == start['LAST']:
                             count_neutral += 1
 
-                        count_price_before += start['LCURRENTPRICE'] * start['LOTSIZE']
-                        count_price_after += current['LCURRENTPRICE'] * current['LOTSIZE']
+                        count_price_before += start['LAST'] * start['LOTSIZE']
+                        count_price_after += current['LAST'] * current['LOTSIZE']
                         count_all += 1
 
             except Exception:
