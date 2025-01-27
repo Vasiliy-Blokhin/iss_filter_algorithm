@@ -13,7 +13,8 @@ from source.settings.settings import (
     END_INTERATION_MESSAGE,
     ERROR_MESSAGE,
     EMPTY_STATISTIC_MESSAGE,
-    DAILY_EXP_MOV_MESSAGE
+    DAILY_EXP_MOV_MESSAGE,
+    START_MESSAGE
 )
 from source.settings.exceptions import NullData
 # Запуск логгера.
@@ -28,6 +29,7 @@ if __name__ == '__main__':
     flag_daily_exp_mov_aver = True
     cur_day = a.curent_data()['day']
     a.create_all_tables()
+    tlg.send_message(text=START_MESSAGE)
     while True:
         try:
             a.save_activity_time()

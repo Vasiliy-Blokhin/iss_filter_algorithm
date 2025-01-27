@@ -16,7 +16,7 @@ load_dotenv()
 
 BASE_DIR: str = getenv('BASE_DIR') if getenv('BASE_DIR') else getcwd()
 
-SERVICE_NAME = getenv('service_name')
+SERVICE_NAME = getenv('SERVICE_NAME')
 
 NEEDFUL = [
     'SECID', 'SHORTNAME', 'PREVPRICE', 'PREVWAPRICE', 'PREVDATE',
@@ -113,3 +113,4 @@ EMPTY_STATISTIC_MESSAGE = 'Статистика не собрана.'
 DAILY_EXP_MOV_MESSAGE = 'Дневной сбор "LASTWAPRICE" произведен.'
 START_MESSAGE = '---Project: iss_filter_algorythm---\n'
 RESTART_MESSAGE = 'Перезагрузка сервиса.'
+START_MESSAGE = 'Сервис стартовал.'
