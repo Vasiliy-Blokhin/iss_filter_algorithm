@@ -3,7 +3,7 @@ import logging
 from source.settings.settings import (
     TELEGRAM_URL,
     START_MESSAGE,
-    handler
+    handler,
 )
 from source.json_worker.worker import JSONSaveAndRead
 

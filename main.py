@@ -75,7 +75,7 @@ if __name__ == '__main__':
         except NullData:
             tlg.send_message(text=EMPTY_STATISTIC_MESSAGE)
         except Exception as error:
-            tlg.send_message(text=ERROR_MESSAGE + error)
+            tlg.send_message(text=ERROR_MESSAGE + str(error))
             logger.error(error)
         finally:
             logger.info(f'Итерация # {counter} окончена')

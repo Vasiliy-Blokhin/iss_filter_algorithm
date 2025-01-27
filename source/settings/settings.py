@@ -16,6 +16,8 @@ load_dotenv()
 
 BASE_DIR: str = getenv('BASE_DIR') if getenv('BASE_DIR') else getcwd()
 
+SERVICE_NAME = getenv('service_name')
+
 NEEDFUL = [
     'SECID', 'SHORTNAME', 'PREVPRICE', 'PREVWAPRICE', 'PREVDATE',
     'STATUS', 'WAPTOPREVWAPRICE', 'UPDATETIME', 'LCURRENTPRICE', 'LAST',
@@ -110,3 +112,4 @@ ERROR_MESSAGE = 'Получена ошибка - '
 EMPTY_STATISTIC_MESSAGE = 'Статистика не собрана.'
 DAILY_EXP_MOV_MESSAGE = 'Дневной сбор "LASTWAPRICE" произведен.'
 START_MESSAGE = '---Project: iss_filter_algorythm---\n'
+RESTART_MESSAGE = 'Перезагрузка сервиса.'
