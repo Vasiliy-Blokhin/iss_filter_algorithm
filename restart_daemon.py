@@ -31,4 +31,4 @@ while True:
         tlg.send_message(text=ERROR_MESSAGE + str(error))
         logger.error(error)
     finally:
-        sleep(TIME_UPDATE)
+        sleep(50)
