@@ -30,6 +30,7 @@ if __name__ == '__main__':
     a.create_all_tables()
     while True:
         try:
+            a.save_activity_time()
             if a.is_not_work_time():
                 logger.info(f'is not work time {a.curent_msc_time()}')
                 continue

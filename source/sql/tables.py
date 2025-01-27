@@ -171,3 +171,11 @@ class ExpMovAverages(Base):
     day_6: Mapped[Optional[float]]
     day_7: Mapped[Optional[float]]
     day_8: Mapped[Optional[float]]
+
+
+class Activity(Base):
+    """ Экспоненциальные скользящие средние. """
+    __tablename__ = 'activity'
+
+    id: Mapped[intpk]
+    last_time: Mapped[Optional[float]]

@@ -150,12 +150,12 @@ class Algorithm(JSONSaveAndRead, SQLmain):
 # _______________________________________________________________
                 lmp = lmp_max * weight['LMP']
                 if (
-                    share.get('LCURRENTPRICE') > share.get('MARKETPRICE')
+                    share.get('LAST') > share.get('MARKETPRICE')
                 ):
                     current_score -= lmp
                     param_score['LMP_CUR'] = -lmp
                 elif (
-                    share.get('LCURRENTPRICE') < share.get('MARKETPRICE')
+                    share.get('LAST') < share.get('MARKETPRICE')
                 ):
                     current_score += lmp
                     param_score['LMP_CUR'] = lmp
@@ -399,3 +399,10 @@ class Algorithm(JSONSaveAndRead, SQLmain):
 
         self.insert_data(data=new_list, table=tables.ExpMovAverages)
 # __________________________________________________________
+
+    @classmethod
+    def save_activity_time(self):
+        self.insert_data(
+            table=tables.Activity,
+            data=[{'last_time': self.curent_msc_time()}]
+        )
