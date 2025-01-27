@@ -156,23 +156,6 @@ class AllStatistic(Base):
     count_price_after: Mapped[Optional[float]]
 
 
-class ExpMovAverages(Base):
-    """ Экспоненциальные скользящие средние. """
-    __tablename__ = 'exp_mov_aver'
-
-    id: Mapped[intpk]
-    SECID: Mapped[Optional[str]]
-    # PREVWAPRICE
-    day_1: Mapped[Optional[float]]
-    day_2: Mapped[Optional[float]]
-    day_3: Mapped[Optional[float]]
-    day_4: Mapped[Optional[float]]
-    day_5: Mapped[Optional[float]]
-    day_6: Mapped[Optional[float]]
-    day_7: Mapped[Optional[float]]
-    day_8: Mapped[Optional[float]]
-
-
 class Activity(Base):
     """ Экспоненциальные скользящие средние. """
     __tablename__ = 'activity'

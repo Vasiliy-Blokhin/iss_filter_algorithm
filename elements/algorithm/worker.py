@@ -28,7 +28,6 @@ from source.settings.settings import (
     STATISTIC_NEED,
     NULL_DATA_ERROR,
     SPLYT_SYMB,
-    EMA_POINTS
 )
 from source.settings.module import interp_4_dote, interp_6_dote
 from source.settings.exceptions import NullData
@@ -76,10 +75,9 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 lctlw_max = LCTLWP_WP_POINTS * weight.get('LCTLWP_WP')
                 lcprcnt_max = LCPRCNT_POINTS * weight.get('LCPRCNT')
                 lmp_max = LMP_POINTS * weight.get('LMP')
-                ema_max = EMA_POINTS * weight.get('EMA')
 
                 max_weights = sum(
-                    [wptpwp_max, lcp_max, pmpwp_max, ema_max,
+                    [wptpwp_max, lcp_max, pmpwp_max,
                         lctlw_max, lcprcnt_max, lmp_max]
                 )
 
@@ -89,7 +87,6 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 param_score['LCTLWP_WP_MAX'] = lctlw_max
                 param_score['LCPRCNT_MAX'] = lcprcnt_max
                 param_score['LMP_MAX'] = lmp_max
-                param_score['EMA_MAX'] = ema_max
 
 # start__________________________________________________________
 
@@ -161,56 +158,6 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                     param_score['LMP_CUR'] = lmp
                 else:
                     param_score['LMP_CUR'] = 0
-# _______________________________________________________________
-                exp_mov_aver_data = self.get_share_on_secid(
-                    table=tables.ExpMovAverages,
-                    secid=share['SECID']
-                )[0]
-                ema = ema_max * weight['EMA']
-
-                pw3 = (
-                    exp_mov_aver_data['day_1'] +
-                    exp_mov_aver_data['day_2'] +
-                    exp_mov_aver_data['day_3']
-                ) / 3
-                pw5 = (
-                    exp_mov_aver_data['day_3'] +
-                    exp_mov_aver_data['day_4'] +
-                    exp_mov_aver_data['day_5']
-                ) / 3
-                pw8 = (
-                    exp_mov_aver_data['day_5'] +
-                    exp_mov_aver_data['day_6'] +
-                    exp_mov_aver_data['day_7'] +
-                    exp_mov_aver_data['day_8']
-                ) / 4
-
-                if (
-                    pw3 > pw5 and pw3 > pw8
-                    and share['TRENDISSUECAPITALIZATION'] > 0
-                ):
-                    current_score += ema / 2
-                    param_score['EMA_CUR'] = ema / 2
-                elif (
-                    pw3 < pw5 and pw3 < pw8
-                    and share['TRENDISSUECAPITALIZATION'] < 0
-                ):
-                    current_score -= ema / 2
-                    param_score['EMA_CUR'] = -ema / 2
-                elif (
-                    pw5 > pw3 and pw5 > pw8
-                    and share['TRENDISSUECAPITALIZATION'] < 0
-                ):
-                    current_score -= ema
-                    param_score['EMA_CUR'] = -ema
-                elif (
-                    pw5 < pw3 and pw5 < pw8
-                    and share['TRENDISSUECAPITALIZATION'] > 0
-                ):
-                    current_score += ema
-                    param_score['EMA_CUR'] = -ema
-                else:
-                    param_score['EMA_CUR'] = 0
 # end____________________________________________________________
 
                 share['FILTER_SCORE'] = (
@@ -365,39 +312,6 @@ class Algorithm(JSONSaveAndRead, SQLmain):
 
         return self.sorted_data(result)
 
-# __________________________________________________________
-# экспоненциальные скользящие средние 3, 5, 8 дней.
-
-    @classmethod
-    def exp_mov_aver_daily_counting(self):
-        new_list = []
-        for share in self.get_all_data(table=tables.PrepareData):
-            data = self.get_share_on_secid(
-                table=tables.ExpMovAverages,
-                secid=share['SECID']
-            )
-
-            new_dict = {}
-            new_dict['SECID'] = share['SECID']
-
-            if data == []:
-                new_dict['SECID'] = share['SECID']
-                for index in range(8, 0, -1):
-                    new_dict['day_' + str(index)] = share['PREVWAPRICE']
-                new_list.append(new_dict)
-                continue
-
-            for index in range(8, 0, -1):
-                if (
-                    data[0]['day_' + str(index)] is None
-                    or index == 1
-                ):
-                    new_dict['day_' + str(index)] = share['PREVWAPRICE']
-                    continue
-                new_dict['day_' + str(index)] = data[0]['day_' + str(index - 1)]
-            new_list.append(new_dict)
-
-        self.insert_data(data=new_list, table=tables.ExpMovAverages)
 # __________________________________________________________
 
     @classmethod

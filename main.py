@@ -26,8 +26,6 @@ logger.addHandler(handler)
 if __name__ == '__main__':
     counter = START_VALUE
     flag_prepare_data = True
-    flag_daily_exp_mov_aver = True
-    cur_day = a.curent_data()['day']
     a.create_all_tables()
     tlg.send_message(text=FIRST_MESSAGE)
     while True:
@@ -41,13 +39,6 @@ if __name__ == '__main__':
             a.data_prepare()
             logger.info('data prepare success')
             if a.is_trade_time():
-                if flag_daily_exp_mov_aver:
-                    a.exp_mov_aver_daily_counting()
-                    flag_daily_exp_mov_aver = False
-                    tlg.send_message(text=DAILY_EXP_MOV_MESSAGE)
-                if cur_day != a.curent_data()['day']:
-                    cur_day = a.curent_data()['day']
-                    flag_daily_exp_mov_aver = True
 
                 if a.data_filter() == NULL_DATA_ERROR:
                     flag_prepare_data = True
