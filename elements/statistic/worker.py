@@ -118,7 +118,9 @@ class Statistic(JSONSaveAndRead, SQLmain):
                 data=current_statistic,
                 table=tables.AllStatistic
             )
+            return True
         except ZeroDivisionError:
             return False
         except Exception as error:
             logger.error(error)
+            return False
