@@ -11,7 +11,6 @@ A.insert_data(
             'LCTLWP_WP': 0.97,
             'LCPRCNT': 1.15,
             'LMP': 1.2,
-            'EMA': 1
         },
     ],
     table=tables.Weights
