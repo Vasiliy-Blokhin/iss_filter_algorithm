@@ -19,10 +19,9 @@ logger = logging.getLogger(name=__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(handler)
 
-subprocess.run(['sh', f'{BASE_DIR}{RESTART_BASH_NAME}'])
 while True:
     try:
-        diff_time = 2 * TIME_UPDATE / 60
+        diff_time = TIME_UPDATE / 30
         activity_time = a.get_all_data(table=tables.Activity)[0]['last_time']
         current_time = a.curent_msc_time()
         if activity_time < current_time - diff_time or current_time == 9.0:
