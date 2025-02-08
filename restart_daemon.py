@@ -25,8 +25,8 @@ while True:
         activity_time = a.get_all_data(table=tables.Activity)[0]['last_time']
         current_time = a.curent_msc_time()
         if activity_time < current_time - diff_time or current_time == 9.0:
-            subprocess.run(['sh', f'{BASE_DIR}{RESTART_BASH_NAME}'])
             tlg.send_message(text=RESTART_MESSAGE)
+            subprocess.run(['sh', f'{BASE_DIR}{RESTART_BASH_NAME}'])
             logger.info(RESTART_MESSAGE)
     except Exception as error:
         tlg.send_message(text=ERROR_MESSAGE + str(error))
