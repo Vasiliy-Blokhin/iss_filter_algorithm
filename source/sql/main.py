@@ -50,6 +50,16 @@ class SQLmain:
             ).all())
 
     @classmethod
+    def get_all_data_with_sort_score(self, table):
+        with Session(bind=main_engine) as s:
+
+            return self.correct_data_in_dict(data=s.execute(
+                sa.select('*').select_from(table).order_by(
+                    sa.desc(table.FILTER_SCORE)
+                )
+            ).all())
+
+    @classmethod
     def get_share_on_secid(self, table, secid):
         with Session(bind=main_engine) as s:
 

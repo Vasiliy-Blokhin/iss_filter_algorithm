@@ -13,7 +13,6 @@ from source.settings.settings import (
     END_INTERATION_MESSAGE,
     ERROR_MESSAGE,
     EMPTY_STATISTIC_MESSAGE,
-    DAILY_EXP_MOV_MESSAGE,
     FIRST_MESSAGE
 )
 from source.settings.exceptions import NullData

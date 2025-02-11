@@ -141,7 +141,7 @@ class Weights(Base):
 
 
 class AllStatistic(Base):
-    """ Весы для работы алгоритма."""
+    """ Статистика работы алгоритма."""
     __tablename__ = 'all_statistic'
 
     id: Mapped[intpk]
@@ -152,7 +152,7 @@ class AllStatistic(Base):
 
 
 class Activity(Base):
-    """ Экспоненциальные скользящие средние. """
+    """ Время активности. """
     __tablename__ = 'activity'
 
     id: Mapped[intpk]

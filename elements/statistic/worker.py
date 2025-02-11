@@ -26,7 +26,9 @@ class Statistic(JSONSaveAndRead, SQLmain):
     def prepare_start_data(self):
         try:
             self.insert_data(
-                data=self.get_all_data(table=tables.CurrentScore),
+                data=self.get_all_data_with_sort_score(
+                    table=tables.CurrentScore
+                )[0:5:1],
                 table=tables.StartScore
             )
         except Exception as error:

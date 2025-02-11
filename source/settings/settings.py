@@ -14,9 +14,9 @@ handler.setFormatter(formater)
 
 load_dotenv()
 
-BASE_DIR: str = getenv('BASE_DIR') if getenv('BASE_DIR') else getcwd()
-REP_NAME: str = getenv('REP_NAME')
-RESTART_BASH_NAME: str = getenv('RESTART_BASH_NAME')
+BASE_DIR = getenv('BASE_DIR') if getenv('BASE_DIR') else getcwd()
+REP_NAME = getenv('REP_NAME')
+RESTART_BASH_NAME = getenv('RESTART_BASH_NAME')
 
 NEEDFUL = [
     'SECID', 'SHORTNAME', 'PREVPRICE', 'PREVWAPRICE', 'PREVDATE',
