@@ -70,5 +70,6 @@ if __name__ == '__main__':
             tlg.send_message(text=ERROR_MESSAGE + str(error))
             logger.error(error)
         finally:
+            a.delete_old_stat_base()
             logger.info(f'Итерация # {counter} окончена')
             sleep(TIME_UPDATE)

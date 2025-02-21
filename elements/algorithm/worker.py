@@ -28,6 +28,7 @@ from source.settings.settings import (
     STATISTIC_NEED,
     NULL_DATA_ERROR,
     SPLYT_SYMB,
+    SIZE_STAT_BASE
 )
 from source.settings.module import interp_4_dote, interp_6_dote
 from source.settings.exceptions import NullData
@@ -320,3 +321,16 @@ class Algorithm(JSONSaveAndRead, SQLmain):
             table=tables.Activity,
             data=[{'last_time': self.curent_msc_time()}]
         )
+
+    @classmethod
+    def delete_old_stat_base(self):
+        last_id = self.get_all_data(
+            table=tables.AllStatistic
+        )[-1]['id']
+        if len(self.get_all_data(
+            table=tables.AllStatistic
+        )) > SIZE_STAT_BASE:
+            self.delete_stat(
+                table=tables.AllStatistic,
+                id=last_id-SIZE_STAT_BASE
+            )

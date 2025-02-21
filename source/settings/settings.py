@@ -112,3 +112,5 @@ DAILY_EXP_MOV_MESSAGE = 'Дневной сбор "LASTWAPRICE" произвед�
 START_MESSAGE = '---Project: iss_filter_algorythm---\n'
 RESTART_MESSAGE = 'Перезагрузка сервиса.'
 FIRST_MESSAGE = 'Сервис стартовал.'
+
+SIZE_STAT_BASE = 120

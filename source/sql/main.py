@@ -67,6 +67,13 @@ class SQLmain:
                 sa.select('*').select_from(table).where(table.SECID == secid)
             ))
 
+    @classmethod
+    def delete_stat(self, table, id):
+        with Session(bind=main_engine) as s:
+
+            s.delete(s.query(table).where(table.id < id))
+            s.commit()
+
     @staticmethod
     def correct_data_in_dict(data):
         result = []
