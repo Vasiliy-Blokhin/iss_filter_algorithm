@@ -71,7 +71,7 @@ class SQLmain:
     def delete_stat(self, table, id):
         with Session(bind=main_engine) as s:
 
-            s.delete(s.query(table).where(table.id < id).all())
+            s.query(table).filter(table.id < id).delete()
             s.commit()
 
     @staticmethod
