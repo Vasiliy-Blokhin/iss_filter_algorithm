@@ -164,7 +164,7 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 share['FILTER_SCORE'] = (
                     (
                         100 * current_score / max_weights
-                    ) * coeff_result
+                    )
                 )
                 if share['FILTER_SCORE'] >= BORDERS_SCORE:
                     share['STATUS_FILTER'] = STATUS_UP
