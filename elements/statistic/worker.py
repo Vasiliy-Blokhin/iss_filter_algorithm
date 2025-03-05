@@ -46,7 +46,7 @@ class Statistic(JSONSaveAndRead, SQLmain):
         for start in self.get_all_data(tables.StartScore):
             try:
                 current = self.get_share_on_secid(
-                    table=tables.CurrentScore,
+                    table=tables.FilterData,
                     secid=start['SECID']
                 )[0]
 
