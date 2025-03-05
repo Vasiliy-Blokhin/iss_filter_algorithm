@@ -39,7 +39,10 @@ if __name__ == '__main__':
             logger.info('data prepare success')
             if a.is_trade_time():
 
-                if a.data_filter() == NULL_DATA_ERROR:
+                if (
+                    counter == START_VALUE
+                    and a.data_filter() == NULL_DATA_ERROR
+                ):
                     flag_prepare_data = True
                     counter = START_VALUE
                     continue
