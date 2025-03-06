@@ -1,6 +1,7 @@
 import logging
 
 from source.json_worker.worker import JSONSaveAndRead
+from elements.notification.worker import TelegramNotification as tlg
 from source.sql.main import SQLmain
 import source.sql.tables as tables
 from source.settings.settings import (
@@ -43,13 +44,17 @@ class Statistic(JSONSaveAndRead, SQLmain):
         count_price_before = 0
         count_price_after = 0
 
+        text = (
+            f'start data - {self.get_all_data(tables.StartScore)}\n\n'
+        )
+
         for start in self.get_all_data(tables.StartScore):
             try:
                 current = self.get_share_on_secid(
                     table=tables.FilterData,
                     secid=start['SECID']
                 )[0]
-
+                text += f'current share - {current}\n'
                 if (
                     start['LAST'] is None
                     or start['LAST'] == 0
@@ -79,6 +84,10 @@ class Statistic(JSONSaveAndRead, SQLmain):
         statistic_prcnt = float(100 * count_positive / count_all)
         neutral_prcnt = float(100 * count_neutral / count_all)
 
+        text += (
+            f'statistic prcn {statistic_prcnt}\n'
+        )
+        tlg.send_message(text)
         comission = count_price_after * COMISSION_COEFF
         potential_profitability = (
             count_price_after - count_price_before - comission
