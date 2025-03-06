@@ -324,6 +324,10 @@ class Algorithm(JSONSaveAndRead, SQLmain):
 
     @classmethod
     def delete_old_stat_base(self):
+        if len(self.get_all_data(
+            table=tables.AllStatistic
+        )) <= SIZE_STAT_BASE:
+            return True
         last_id = self.get_all_data(
             table=tables.AllStatistic
         )[-1]['id']

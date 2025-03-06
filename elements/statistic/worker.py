@@ -44,20 +44,16 @@ class Statistic(JSONSaveAndRead, SQLmain):
         count_price_before = 0
         count_price_after = 0
 
-        text = (
-            f'start data - {self.get_all_data(tables.StartScore)}\n\n'
-        )
-
         for start in self.get_all_data(tables.StartScore):
             try:
                 current = self.get_share_on_secid(
                     table=tables.FilterData,
                     secid=start['SECID']
                 )[0]
-                text += f'current share - {current}\n'
+
                 if (
-                    start['LAST'] is None
-                    or start['LAST'] == 0
+                    start['LAST'] is None or start['LAST'] == 0
+                    or current['LAST'] is None or current['LAST'] == 0
                 ):
                     continue
 
@@ -66,11 +62,12 @@ class Statistic(JSONSaveAndRead, SQLmain):
                 elif current['LAST'] == start['LAST']:
                     count_neutral += 1
 
-                count_price_before += start['LAST'] * start['LOTSIZE']
-                count_price_after += current['LAST'] * current['LOTSIZE']
                 count_all += 1
+                count_price_before += float(start['LAST']) * float(start['LOTSIZE'])
+                count_price_after += float(current['LAST']) * float(current['LOTSIZE'])
 
-            except Exception:
+            except Exception as e:
+                logger.error(f"Error processing data: {e}")
                 continue
 
         if count_all == 0:
@@ -84,10 +81,6 @@ class Statistic(JSONSaveAndRead, SQLmain):
         statistic_prcnt = float(100 * count_positive / count_all)
         neutral_prcnt = float(100 * count_neutral / count_all)
 
-        text += (
-            f'statistic prcn {statistic_prcnt}\n'
-        )
-        tlg.send_message(text)
         comission = count_price_after * COMISSION_COEFF
         potential_profitability = (
             count_price_after - count_price_before - comission
