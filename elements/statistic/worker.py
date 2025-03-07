@@ -67,7 +67,7 @@ class Statistic(JSONSaveAndRead, SQLmain):
                 count_price_after += float(current['LAST']) * float(current['LOTSIZE'])
 
             except Exception as e:
-                logger.error(f"Error processing data: {e}")
+                logger.error(f'{e}')
                 continue
 
         if count_all == 0:
