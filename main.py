@@ -38,10 +38,10 @@ if __name__ == '__main__':
             a.data_prepare()
             logger.info('data prepare success')
             if a.is_trade_time():
-
+                filter_data = a.data_filter()
                 if (
                     counter == START_VALUE
-                    and a.data_filter() == NULL_DATA_ERROR
+                    and filter_data == NULL_DATA_ERROR
                 ):
                     flag_prepare_data = True
                     counter = START_VALUE
