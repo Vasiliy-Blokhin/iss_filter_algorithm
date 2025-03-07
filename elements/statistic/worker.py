@@ -29,7 +29,7 @@ class Statistic(JSONSaveAndRead, SQLmain):
             self.insert_data(
                 data=self.get_all_data_with_sort_score(
                     table=tables.CurrentScore
-                )[0:5:1],
+                ),
                 table=tables.StartScore
             )
         except Exception as error:
