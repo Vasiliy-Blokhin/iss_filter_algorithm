@@ -113,4 +113,4 @@ START_MESSAGE = '---Project: iss_filter_algorythm---\n'
 RESTART_MESSAGE = 'Перезагрузка сервиса.'
 FIRST_MESSAGE = 'Сервис стартовал.'
 
-SIZE_STAT_BASE = 80
+SIZE_STAT_BASE = 79

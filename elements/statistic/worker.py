@@ -50,10 +50,7 @@ class Statistic(JSONSaveAndRead, SQLmain):
                     table=tables.FilterData,
                     secid=start['SECID']
                 )[0]
-                tlg.send_message(
-                    f'start share - {start}'
-                    f'current share - {current}'
-                )
+
                 if (
                     start['LAST'] is None or start['LAST'] == 0
                     or current['LAST'] is None or current['LAST'] == 0
