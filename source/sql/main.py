@@ -21,6 +21,19 @@ class SQLmain:
         Base.metadata.create_all(bind=main_engine)
 
     @staticmethod
+    def reload_db(table):
+        with Session(bind=main_engine) as s:
+            Base.metadata.drop_all(
+                    bind=main_engine,
+                    tables=[table.__table__]
+                )
+            Base.metadata.create_all(
+                bind=main_engine,
+                tables=[table.__table__]
+            )
+            s.commit()
+
+    @staticmethod
     def insert_data(data, table):
         with Session(bind=main_engine) as s:
             Base.metadata.drop_all(
