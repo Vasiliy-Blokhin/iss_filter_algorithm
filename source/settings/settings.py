@@ -34,6 +34,7 @@ SHARE_GROUPS = ['TQBR']
 
 WEIGHTS_PARAM = [
     'WPTPWP', 'LCP', 'PMPWP_WP', 'LCTLWP_WP', 'LCPRCNT', 'LMP',
+    'TIC_IC'
 ]
 STOP_TRADING = 'торги приостановлены'
 RUN_TRADING = 'торги идут'
@@ -46,7 +47,7 @@ IMOEX_URL = (
 
 # Итерация работы.
 SET_ITERATION = 10
-TIME_UPDATE = 750
+TIME_UPDATE = 600
 START_VALUE = 0
 
 # Баллы по параметрам алгоритма.
@@ -56,6 +57,7 @@ PMPWP_WP_POINTS = 8
 LCTLWP_WP_POINTS = 5
 LCPRCNT_POINTS = 10
 LMP_POINTS = 10
+TIC_IC_POINTS = 7
 
 # Коэффициенты для работы алгоритма и статистики.
 # Комиссия на оборот.
@@ -67,7 +69,7 @@ MAX_SCORE = (
     abs(WPTPWP_POINTS) + abs(LCP_POINTS) +
     abs(PMPWP_WP_POINTS) +
     abs(LCTLWP_WP_POINTS) + abs(LCPRCNT_POINTS) +
-    abs(LMP_POINTS)
+    abs(LMP_POINTS) + abs(TIC_IC_POINTS)
 )
 # Абстрактное увеличение результата для выборки
 ABSTRACT_COEFF = 1

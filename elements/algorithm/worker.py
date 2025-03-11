@@ -28,7 +28,8 @@ from source.settings.settings import (
     STATISTIC_NEED,
     NULL_DATA_ERROR,
     SPLYT_SYMB,
-    SIZE_STAT_BASE
+    SIZE_STAT_BASE,
+    TIC_IC_POINTS
 )
 from source.settings.module import interp_4_dote, interp_6_dote
 from source.settings.exceptions import NullData
@@ -76,6 +77,7 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 lctlw_max = LCTLWP_WP_POINTS * weight.get('LCTLWP_WP')
                 lcprcnt_max = LCPRCNT_POINTS * weight.get('LCPRCNT')
                 lmp_max = LMP_POINTS * weight.get('LMP')
+                tic_ic_max = TIC_IC_POINTS * weight.get('TIC_IC')
 
                 max_weights = sum(
                     [wptpwp_max, lcp_max, pmpwp_max,
@@ -159,6 +161,20 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                     param_score['LMP_CUR'] = lmp
                 else:
                     param_score['LMP_CUR'] = 0
+# _______________________________________________________________
+
+                capitalization_diff = (
+                    share['TRENDISSUECAPITALIZATION']
+                    / share['ISSUECAPITALIZATION']
+                )
+                tic_ic = interp_4_dote(
+                    dote_prcnt=capitalization_diff,
+                    point_limits=[-tic_ic_max, tic_ic_max],
+                    prcnt_limits=[-4, 4],
+                    prcnt_start_limit=0.3
+                ) * weight['TIC_IC']
+                current_score += tic_ic
+                param_score['TIC_IC_CUR'] = tic_ic
 # end____________________________________________________________
 
                 share['FILTER_SCORE'] = (

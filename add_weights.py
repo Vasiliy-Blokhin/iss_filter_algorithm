@@ -5,12 +5,13 @@ import source.sql.tables as tables
 A.insert_data(
     data=[
         {
-            'WPTPWP': 1.05,
-            'LCP': 1.1,
-            'PMPWP_WP': 1.14,
-            'LCTLWP_WP': 0.97,
+            'WPTPWP': 1.06,
+            'LCP': 1.2,
+            'PMPWP_WP': 1.23,
+            'LCTLWP_WP': 1.06,
             'LCPRCNT': 1.15,
-            'LMP': 1.2,
+            'LMP': 1.3,
+            'TIC-IC': 1
         },
     ],
     table=tables.Weights

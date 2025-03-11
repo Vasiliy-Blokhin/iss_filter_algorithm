@@ -107,7 +107,7 @@ class WEIGHTS(JSONSaveAndRead, SQLmain):
     def get_rand_weight(self, values: list[int]):
         start = values[0]
         end = values[1]
-        result = randrange(start=start, stop=end) / 3000
+        result = randrange(start=start, stop=end) / 1000
         return result * self.weight_growth_rate()
 
     @classmethod
