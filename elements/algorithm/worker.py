@@ -53,7 +53,6 @@ class Algorithm(JSONSaveAndRead, SQLmain):
         """
         shares_data = self.get_all_data(tables.PrepareData)
         weight_data = self.get_all_data(tables.Weights)
-        coeff_result = ABSTRACT_COEFF * 100 / MAX_SCORE
 
         param_score_list = []
         data = []
@@ -80,7 +79,7 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 tic_ic_max = TIC_IC_POINTS * weight.get('TIC_IC')
 
                 max_weights = sum(
-                    [wptpwp_max, lcp_max, pmpwp_max,
+                    [wptpwp_max, lcp_max, pmpwp_max, tic_ic_max,
                         lctlw_max, lcprcnt_max, lmp_max]
                 )
 
@@ -90,7 +89,7 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 param_score['LCTLWP_WP_MAX'] = lctlw_max
                 param_score['LCPRCNT_MAX'] = lcprcnt_max
                 param_score['LMP_MAX'] = lmp_max
-
+                param_score['TIC_IC_MAX'] = tic_ic_max
 # start__________________________________________________________
 
                 wptpwp = -interp_4_dote(
