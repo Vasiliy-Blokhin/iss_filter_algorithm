@@ -12,6 +12,7 @@ from source.settings.settings import (
 from source.settings.module import interp_4_dote
 from source.sql.main import SQLmain
 import source.sql.tables as tables
+from elements.notification.worker import TelegramNotification as tlg
 
 
 # Подключение логгера.
@@ -30,13 +31,22 @@ class WEIGHTS(JSONSaveAndRead, SQLmain):
         min_delta_weight = self.get_rand_weight(MIN)
         max_delta_weight = self.get_rand_weight(MAX)
         med_delta_weight = self.get_rand_weight(MED)
+
+        text = (
+            f'\n\nstart data - {start_data}\n\n')
+        text += (
+            f'weights - {weights}\n\n'
+        )
         for start_share in start_data:
             try:
                 end_share = self.get_share_on_secid(
                     table=tables.CurrentScore,
                     secid=start_share['SECID']
                 )[0]
-
+                text += (
+                    f'start share - {start_share}\n'
+                    f'end share - {end_share}\n\n'
+                )
                 weights_dict = self.weights_correct_body(
                     start_share,
                     end_share,
@@ -45,6 +55,7 @@ class WEIGHTS(JSONSaveAndRead, SQLmain):
                     max_delta_weight,
                     med_delta_weight,
                 )
+                text += f'result weights - {weights_dict}'
                 if weights_dict == {}:
                     continue
                 self.insert_data(weights_dict, tables.Weights)
@@ -52,6 +63,7 @@ class WEIGHTS(JSONSaveAndRead, SQLmain):
                 continue
             except Exception as error:
                 logger.error(error)
+        tlg.send_message(text)
 
     @classmethod
     def weights_correct_body(
