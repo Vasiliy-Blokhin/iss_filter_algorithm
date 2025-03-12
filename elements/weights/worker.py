@@ -55,7 +55,7 @@ class WEIGHTS(JSONSaveAndRead, SQLmain):
                     max_delta_weight,
                     med_delta_weight,
                 )
-                text += f'result weights - {weights_dict}'
+                text += f'weights_dict - {weights_dict}\n'
                 if weights_dict == {}:
                     continue
                 self.insert_data(weights_dict, tables.Weights)
@@ -63,6 +63,7 @@ class WEIGHTS(JSONSaveAndRead, SQLmain):
                 continue
             except Exception as error:
                 logger.error(error)
+        text += f'result weights - {weights_dict}'
         tlg.send_message(text)
 
     @classmethod
@@ -75,43 +76,46 @@ class WEIGHTS(JSONSaveAndRead, SQLmain):
         max_delta_weight,
         med_delta_weight,
     ):
-        weights_dict = {}
-        for weights_name in WEIGHTS_PARAM:
-            weights_ratio = (
-                    start_share[
-                        weights_name + '_CUR'
-                    ] / start_share[weights_name + '_MAX']
-                )
-            if start_share['LAST'] < end_share['LAST']:
-                if weights_ratio > 0.7:
-                    weights_dict[weights_name] = (
-                        weights[weights_name] + max_delta_weight
+        try:
+            weights_dict = {}
+            for weights_name in WEIGHTS_PARAM:
+                weights_ratio = (
+                        start_share[
+                            weights_name + '_CUR'
+                        ] / start_share[weights_name + '_MAX']
                     )
-                elif weights_ratio < 0.4:
-                    weights_dict[weights_name] = (
-                        weights[weights_name] + min_delta_weight
-                    )
+                if start_share['LAST'] < end_share['LAST']:
+                    if weights_ratio > 0.7:
+                        weights_dict[weights_name] = (
+                            weights[weights_name] + max_delta_weight
+                        )
+                    elif weights_ratio < 0.4:
+                        weights_dict[weights_name] = (
+                            weights[weights_name] + min_delta_weight
+                        )
+                    else:
+                        weights_dict[weights_name] = (
+                            weights[weights_name] + med_delta_weight
+                        )
+                elif start_share['LAST'] > end_share['LAST']:
+                    if weights_ratio > 0.7:
+                        weights_dict[weights_name] = (
+                            weights[weights_name] + min_delta_weight
+                        )
+                    elif weights_ratio < 0.4:
+                        weights_dict[weights_name] = (
+                            weights[weights_name] + max_delta_weight
+                        )
+                    else:
+                        weights_dict[weights_name] = (
+                            weights[weights_name] + med_delta_weight
+                        )
                 else:
                     weights_dict[weights_name] = (
-                        weights[weights_name] + med_delta_weight
-                    )
-            elif start_share['LAST'] > end_share['LAST']:
-                if weights_ratio > 0.7:
-                    weights_dict[weights_name] = (
-                        weights[weights_name] + min_delta_weight
-                    )
-                elif weights_ratio < 0.4:
-                    weights_dict[weights_name] = (
-                        weights[weights_name] + max_delta_weight
-                    )
-                else:
-                    weights_dict[weights_name] = (
-                        weights[weights_name] + med_delta_weight
-                    )
-            else:
-                weights_dict[weights_name] = (
-                        weights[weights_name] + med_delta_weight
-                    )
+                            weights[weights_name] + med_delta_weight
+                        )
+        except Exception as error:
+            logger.error(error)
         return weights_dict
 
     # Значения для корректировки весов.
