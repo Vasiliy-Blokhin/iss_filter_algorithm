@@ -40,7 +40,7 @@ class WEIGHTS(JSONSaveAndRead, SQLmain):
         for start_share in start_data:
             try:
                 end_share = self.get_share_on_secid(
-                    table=tables.CurrentScore,
+                    table=tables.FilterData,
                     secid=start_share['SECID']
                 )[0]
                 text += (
