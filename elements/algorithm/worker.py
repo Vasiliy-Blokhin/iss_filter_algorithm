@@ -95,7 +95,7 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 wptpwp = -interp_4_dote(
                     dote_prcnt=share['WAPTOPREVWAPRICEPRCNT'],
                     point_limits=[-wptpwp_max, wptpwp_max],
-                    prcnt_limits=[-3, 3],
+                    prcnt_limits=[-4, 4],
                     prcnt_start_limit=0.2
                 )
                 current_score += wptpwp
@@ -119,7 +119,7 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 pmpwp_wp = -interp_6_dote(
                     dote_prcnt=share['PRICEMINUSPREVWAPRICE']/share['WAPRICE'],
                     point_limits=[-pmpwp_max, pmpwp_max],
-                    prcnt_limits=[-3, -1.5, 1.5, 3],
+                    prcnt_limits=[-4, -2, 2, 4],
                     prcnt_start_limit=0.2
                 ) * weight['PMPWP_WP']
                 current_score += pmpwp_wp
@@ -129,7 +129,7 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 lctlwp_wp = -interp_6_dote(
                     dote_prcnt=share['LASTCNGTOLASTWAPRICE']/share['WAPRICE'],
                     point_limits=[-lctlw_max, lctlw_max],
-                    prcnt_limits=[-2.5, 1, -1, 2.5],
+                    prcnt_limits=[-4, -2, 2, 4],
                     prcnt_start_limit=0.1
                 ) * weight['LCTLWP_WP']
                 current_score += lctlwp_wp
@@ -140,7 +140,7 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 lcprcnt = interp_4_dote(
                     dote_prcnt=share['LASTCHANGEPRCNT'],
                     point_limits=[-lcprcnt_max, lcprcnt_max],
-                    prcnt_limits=[-1, 1],
+                    prcnt_limits=[-2, 2],
                     prcnt_start_limit=0.05
                 ) * weight['LCPRCNT']
                 current_score += lcprcnt
@@ -169,7 +169,7 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 tic_ic = interp_4_dote(
                     dote_prcnt=capitalization_diff,
                     point_limits=[-tic_ic_max, tic_ic_max],
-                    prcnt_limits=[-4, 4],
+                    prcnt_limits=[-5, 5],
                     prcnt_start_limit=0.3
                 ) * weight['TIC_IC']
                 current_score += tic_ic
