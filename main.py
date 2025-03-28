@@ -1,5 +1,5 @@
 import logging
-from time import sleep
+from time import sleep, time
 from elements.algorithm.worker import Algorithm as a
 from elements.statistic.worker import Statistic as s
 from elements.weights.worker import WEIGHTS as w
@@ -29,6 +29,7 @@ if __name__ == '__main__':
     tlg.send_message(text=FIRST_MESSAGE)
     while True:
         try:
+            start_time = time()
             a.save_activity_time()
             if a.is_not_work_time():
                 logger.info(f'is not work time {a.curent_msc_time()}')
@@ -75,4 +76,4 @@ if __name__ == '__main__':
         finally:
             a.delete_old_stat_base()
             logger.info(f'Итерация # {counter} окончена')
-            sleep(TIME_UPDATE)
+            sleep(TIME_UPDATE - time() - start_time)
