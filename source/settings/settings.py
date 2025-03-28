@@ -46,7 +46,7 @@ IMOEX_URL = (
 
 
 # Итерация работы.
-SET_ITERATION = 10
+SET_ITERATION = 15
 TIME_UPDATE = 500
 START_VALUE = 0
 
