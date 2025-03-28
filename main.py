@@ -76,4 +76,6 @@ if __name__ == '__main__':
         finally:
             a.delete_old_stat_base()
             logger.info(f'Итерация # {counter} окончена')
-            sleep(TIME_UPDATE - time() - start_time)
+            sleep_time = TIME_UPDATE - time() - start_time
+            if sleep_time > 0:
+                sleep(sleep_time)
