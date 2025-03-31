@@ -95,7 +95,7 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 wptpwp = -interp_4_dote(
                     dote_prcnt=share['WAPTOPREVWAPRICEPRCNT'],
                     point_limits=[-wptpwp_max, wptpwp_max],
-                    prcnt_limits=[-3.2, 3.2],
+                    prcnt_limits=[-2.6, 2.6],
                     prcnt_start_limit=0.18
                 )
                 current_score += wptpwp
@@ -119,8 +119,8 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 pmpwp_wp = -interp_6_dote(
                     dote_prcnt=share['PRICEMINUSPREVWAPRICE']/share['WAPRICE'],
                     point_limits=[-pmpwp_max, pmpwp_max],
-                    prcnt_limits=[-3.2, -1.68, 1.068, 3.2],
-                    prcnt_start_limit=0.32
+                    prcnt_limits=[-2.6, -1.28, 1.28, 2.6],
+                    prcnt_start_limit=0.12
                 ) * weight['PMPWP_WP']
                 current_score += pmpwp_wp
                 param_score['PMPWP_WP_CUR'] = pmpwp_wp
@@ -129,8 +129,8 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 lctlwp_wp = -interp_6_dote(
                     dote_prcnt=share['LASTCNGTOLASTWAPRICE']/share['WAPRICE'],
                     point_limits=[-lctlw_max, lctlw_max],
-                    prcnt_limits=[-3.2, -1.68, 1.68, 3.2],
-                    prcnt_start_limit=0.32
+                    prcnt_limits=[-2.6, -1.28, 1.28, 2.6],
+                    prcnt_start_limit=0.12
                 ) * weight['LCTLWP_WP']
                 current_score += lctlwp_wp
                 param_score['LCTLWP_WP_CUR'] = lctlwp_wp
@@ -141,7 +141,7 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                     dote_prcnt=share['LASTCHANGEPRCNT'],
                     point_limits=[-lcprcnt_max, lcprcnt_max],
                     prcnt_limits=[-1.68, 1.68],
-                    prcnt_start_limit=0.16
+                    prcnt_start_limit=0.1
                 ) * weight['LCPRCNT']
                 current_score += lcprcnt
                 param_score['LCPRCNT_CUR'] = lcprcnt
@@ -169,8 +169,8 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 tic_ic = interp_4_dote(
                     dote_prcnt=capitalization_diff,
                     point_limits=[-tic_ic_max, tic_ic_max],
-                    prcnt_limits=[-3.65, 3.65],
-                    prcnt_start_limit=0.62
+                    prcnt_limits=[-2.65, 2.65],
+                    prcnt_start_limit=0.2
                 ) * weight['TIC_IC']
                 current_score += tic_ic
                 param_score['TIC_IC_CUR'] = tic_ic
