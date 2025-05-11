@@ -343,9 +343,9 @@ class Algorithm(JSONSaveAndRead, SQLmain):
             if len(self.get_all_data(
                 table=tables.AllStatistic
             )) > SIZE_STAT_BASE:
-                last_id = self.get_all_data(
+                last_id = int(self.get_all_data(
                     table=tables.AllStatistic
-                )[-1]['id']
+                )[-1]['id'])
 
                 self.delete_stat(
                     table=tables.AllStatistic,
