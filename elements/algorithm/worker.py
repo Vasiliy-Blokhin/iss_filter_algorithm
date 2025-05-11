@@ -339,17 +339,26 @@ class Algorithm(JSONSaveAndRead, SQLmain):
 
     @classmethod
     def delete_old_stat_base(self):
-        if len(self.get_all_data(
-            table=tables.AllStatistic
-        )) <= SIZE_STAT_BASE:
-            return True
-        last_id = self.get_all_data(
-            table=tables.AllStatistic
-        )[-1]['id']
-        if len(self.get_all_data(
-            table=tables.AllStatistic
-        )) > SIZE_STAT_BASE:
-            self.delete_stat(
-                table=tables.AllStatistic,
-                id=last_id-SIZE_STAT_BASE
+        try:
+            if len(self.get_all_data(
+                table=tables.AllStatistic
+            )) > SIZE_STAT_BASE:
+                last_id = self.get_all_data(
+                    table=tables.AllStatistic
+                )[-1]['id']
+
+                self.delete_stat(
+                    table=tables.AllStatistic,
+                    id=last_id-SIZE_STAT_BASE
+                )
+            logger.info(
+                f'''len - {len(self.get_all_data(
+                table=tables.AllStatistic
+            )) > SIZE_STAT_BASE}\n
+                last id - {last_id}\n
+                new id - {self.get_all_data(
+                    table=tables.AllStatistic
+                )[-1]['id']}\n'''
             )
+        except Exception as error:
+            logger.error(error)
