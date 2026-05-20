@@ -93,3 +93,8 @@ class SQLmain:
         for el in data:
             result.append(el._asdict())
         return result
+
+    @classmethod
+    def run_sql_command(self, command):
+        with Session(bind=main_engine) as s:
+            return s.execute(sa.text(command)).mappings().fetchall()

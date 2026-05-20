@@ -2,5 +2,4 @@ from elements.algorithm.worker import Algorithm as A
 from elements.statistic.worker import Statistic as s
 import source.sql.tables as tables
 
-A.reload_db(table=tables.CurrentScore)
-A.reload_db(table=tables.StartScore)
+A.insert_data(table=tables.AllStatistic, data={'statistic_prcnt': 10, 'neutral_prcnt': 10, 'potential_profitability': 10, 'count_price_after':10})

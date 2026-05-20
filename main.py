@@ -1,4 +1,5 @@
 import logging
+import sys
 from time import sleep, time
 from elements.algorithm.worker import Algorithm as a
 from elements.statistic.worker import Statistic as s
@@ -26,7 +27,13 @@ if __name__ == '__main__':
     counter = START_VALUE
     flag_prepare_data = True
     a.create_all_tables()
-    tlg.send_message(text=FIRST_MESSAGE)
+    #tlg.send_message(text=FIRST_MESSAGE)
+    if len(sys.argv) > 1:
+        command = sys.argv[1]
+        if command == "statistic":
+            s.show_statistic()
+            sys.exit()
+        
     while True:
         try:
             start_time = time()
@@ -63,15 +70,15 @@ if __name__ == '__main__':
                     logger.info('weights counter success')
                     if not s.result_statistic():
                         raise NullData
-                    tlg.send_message(text=END_INTERATION_MESSAGE)
+                    #tlg.send_message(text=END_INTERATION_MESSAGE)
 
             else:
                 flag_prepare_data = True
                 counter = START_VALUE
-        except NullData:
-            tlg.send_message(text=EMPTY_STATISTIC_MESSAGE)
+        #except NullData:
+            #tlg.send_message(text=EMPTY_STATISTIC_MESSAGE)
         except Exception as error:
-            tlg.send_message(text=ERROR_MESSAGE + str(error))
+            #tlg.send_message(text=ERROR_MESSAGE + str(error))
             logger.error(error)
         finally:
             a.delete_old_stat_base()

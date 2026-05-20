@@ -71,3 +71,23 @@ def interp_6_dote(
         )
     else:
         return 0
+
+def ai_prompt_result(
+        secid=None,
+        share_data=None,
+        filter_score=None,
+        statistic=None,
+        news=None
+    ):
+    return (#'Your task is to provide your assessment and return a single number reflecting the probability of a stocks rise during the trading day as a percentage. '
+        #'The response format is strictly a single integer, '
+        #'without text, brackets, punctuation, or any '
+        #'other symbols.'
+        'Calculation data: '
+        f'Ticker: {secid}; '
+        f'Data from iss.moex: {share_data}; '
+        #f'My probability score: {filter_score:.2f} %; '
+        #f'My calculation statistics (in percent): {statistic}; '
+        #f'Latest news (RSS): {news}.'
+        #'Remember: the answer is ONLY a NUMBER, nothing more!'
+        )

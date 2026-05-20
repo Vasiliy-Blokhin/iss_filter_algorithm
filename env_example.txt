@@ -1,0 +1,10 @@
+BASE_DIR = 'directory'
+TLG_NOTICE_TOKEN = 'telegram token'
+TLG_NOTICE_CHAT_ID = 'telegram chat_id with bot'
+SERVICE_NAME = 'service name for retry in errors'
+
+db_name = 'name_db'
+db_port = '5432'
+db_login = 'postgres'
+db_password = 'password'
+db_connector = 'postgresql'

@@ -104,20 +104,50 @@ class Statistic(JSONSaveAndRead, SQLmain):
         return False
 
     @classmethod
+    def show_statistic(self):
+        data = self.get_all_data(table=tables.AllStatistic)
+
+        prof_prcnt = 0
+        neutral_prcnt = 0
+        pot_prob = 0
+        all_price = 0
+        for el in data:
+            prof_prcnt += el['statistic_prcnt']
+            neutral_prcnt += el['neutral_prcnt']
+            pot_prob += el['potential_profitability']
+            all_price += el['count_price_after']
+        prof_prcnt /= len(data)
+        neutral_prcnt /= len(data)
+        pot_prob /= len(data)
+        all_price /= len(data)
+
+        logger.info(
+        '\nПроцент дохода/убытка: '
+        f'{(100*pot_prob/all_price):.2f} %\n'
+        'Процент доходных сделок: '
+        f'{prof_prcnt:.2f} %\n'
+        'Процент убыточных сделок: '
+        f'{(100 - prof_prcnt - neutral_prcnt):.2f} %\n'
+        'Количество сделок: '
+        f'{len(data)} шт'           
+        )
+
+
+    @classmethod
     def result_statistic(self):
         try:
             current_statistic = self.make_statistic()
-            logger.info(f'current stat - {current_statistic}')
             statistic_prcnt = round(
                 100 * current_statistic[
                     'potential_profitability'
                 ] / current_statistic['count_price_after'], 2
             )
-            if (
-                self.is_null_result(current_statistic)
-                or abs(statistic_prcnt) / 100 == COMISSION_COEFF
-            ):
-                return False
+            #if (
+            #    self.is_null_result(current_statistic)
+            #    or abs(statistic_prcnt) / 100 == COMISSION_COEFF
+            #):
+            #    return False
+            logger.info(f'current stat - {current_statistic}')
             self.append_data(
                 data=current_statistic,
                 table=tables.AllStatistic

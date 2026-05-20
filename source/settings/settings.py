@@ -26,6 +26,7 @@ NEEDFUL = [
     'WAPTOPREVWAPRICEPRCNT', 'MARKETPRICE', 'ISSUECAPITALIZATION',
     'TRENDISSUECAPITALIZATION', 'BOARDID', 'LOTSIZE', 'HIGH', 'LOW'
 ]
+
 STATISTIC_NEED = [
     'SECID', 'STATUS_FILTER', 'LAST', 'FILTER_SCORE', 'LOTSIZE'
 ]
@@ -43,7 +44,17 @@ IMOEX_URL = (
     'http://iss.moex.com/iss/engines/stock/markets/shares/'
     'securities.json?iss.json=extended&iss.meta=off'
 )
-
+RSS_NEWS_URL = (
+    'https://aif.ru/rss/politics.php'
+)
+GET_FILTER_DATA_COMMAND = 'SELECT * FROM filter_data WHERE "FILTER_SCORE" > 60;'
+GET_STATISTIC_COMMAND = (
+    'SELECT '
+    'CAST(ROUND(CAST((AVG(statistic_prcnt)) AS numeric), 2) AS real) AS profitable_deals, '
+    'CAST(ROUND(CAST((100 - AVG(neutral_prcnt) - AVG(statistic_prcnt)) AS numeric), 2) AS real) AS losing_deals, '
+    'CAST(ROUND(CAST((100 * AVG(potential_profitability) / AVG(count_price_after)) AS numeric), 2) AS real) AS result_trading '
+    'FROM all_statistic;'
+)
 
 # Итерация работы.
 SET_ITERATION = 10

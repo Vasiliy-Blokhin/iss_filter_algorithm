@@ -38,7 +38,7 @@ class JSONSaveAndRead():
                 return requests.delete(url, headers=headers).json()
             return requests.get(url, headers=headers).json()
         except json.decoder.JSONDecodeError:
-            return []
+            return requests.get(url, headers=headers)._content.decode('utf-8')
 
     @classmethod
     def save_file(cls, data, file=None):

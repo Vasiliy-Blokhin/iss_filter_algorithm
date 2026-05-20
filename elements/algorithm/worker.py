@@ -29,9 +29,12 @@ from source.settings.settings import (
     NULL_DATA_ERROR,
     SPLYT_SYMB,
     SIZE_STAT_BASE,
-    TIC_IC_POINTS
+    TIC_IC_POINTS,
+    GET_FILTER_DATA_COMMAND,
+    GET_STATISTIC_COMMAND,
+    RSS_NEWS_URL
 )
-from source.settings.module import interp_4_dote, interp_6_dote
+from source.settings.module import interp_4_dote, interp_6_dote, ai_prompt_result
 from source.settings.exceptions import NullData
 from source.sql.main import SQLmain
 import source.sql.tables as tables
@@ -202,6 +205,8 @@ class Algorithm(JSONSaveAndRead, SQLmain):
         try:
             if data == [] or param_score_list == []:
                 raise NullData
+            #logger.info('filter_data: ' + str(data[0]))
+            #logger.info('\n\ncurrent_score: ' + str(param_score_list[0]))
             self.insert_data(
                 data=data,
                 table=tables.FilterData
@@ -339,7 +344,7 @@ class Algorithm(JSONSaveAndRead, SQLmain):
 
     @classmethod
     def delete_old_stat_base(self):
-        try:
+        """try:
             if len(self.get_all_data(
                 table=tables.AllStatistic
             )) > SIZE_STAT_BASE:
@@ -361,4 +366,46 @@ class Algorithm(JSONSaveAndRead, SQLmain):
                 )[-1]['id']}\n'''
             )
         except Exception as error:
-            logger.error(error)
+            logger.error(error)"""
+        pass
+
+    @classmethod
+    def ai_prompts(self, stock_valuation=True):
+        # prepare data for ai prompt
+        share_data = self.run_sql_command(
+            GET_FILTER_DATA_COMMAND
+        )[0]
+        statistic_data = self.run_sql_command(
+            GET_STATISTIC_COMMAND
+        )[0]
+
+        if stock_valuation:
+            return ai_prompt_result(
+                secid=share_data['SECID'],
+                share_data=self.share_data_for_prompts(
+                    share_data
+                ),
+                filter_score=share_data['FILTER_SCORE'],
+                statistic=statistic_data,
+                #news=self.get_news()
+            )
+    
+    @classmethod
+    def get_news(self):
+        news_data = self.get_api_response(url=RSS_NEWS_URL)
+
+
+    @staticmethod
+    def share_data_for_prompts(share_data:dict):
+        result = {}
+        trash_keys = [
+            'id', 'SECID', 'SHORTNAME', 'STATUS',
+            'DATAUPDATE', 'CURRENCYID', 'TRADINGSESSION',
+            'BOARDID', 'STATUS_FILTER', 'FILTER_SCORE'
+        ]
+
+        for key, value in share_data.items():
+            if key in trash_keys:
+                continue
+            result[key] = value
+        return result
