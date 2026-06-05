@@ -156,6 +156,30 @@ class AllStatistic(Base):
     count_price_after: Mapped[Optional[float]]
 
 
+class SectorSecidNames(Base):
+    """ pass """
+    __tablename__ = 'secid_sector'
+
+    id: Mapped[intpk]
+    SECID: Mapped[Optional[str]]
+    SECTOR: Mapped[Optional[str]]
+
+class SectorNameRU(Base):
+    """ pass """
+    __tablename__ = 'sector_dict_ru'
+
+    id: Mapped[intpk]
+    SECTOR: Mapped[Optional[str]]
+    NAME: Mapped[Optional[str]]
+
+class SectorNameEN(Base):
+    """ pass """
+    __tablename__ = 'sector_dict_en'
+
+    id: Mapped[intpk]
+    SECTOR: Mapped[Optional[str]]
+    NAME: Mapped[Optional[str]]
+
 class Activity(Base):
     """ Время активности. """
     __tablename__ = 'activity'
