@@ -1,86 +1,97 @@
+""" Движок сигналов для сделок на 1-2 дня (акции TQBR Мосбиржи).
+
+Команды:
+    python main.py update      — загрузить/обновить дневную историю с ISS
+    python main.py backtest    — бэктест модели и бенчмарков (последние ~250 дней)
+    python main.py signals     — сформировать сигналы по последнему закрытию
+    python main.py statistic   — последние результаты бэктестов
+    python main.py run         — демон: каждое утро буднего дня update + signals
+"""
+import argparse
 import logging
-import sys
-from time import sleep, time
-from elements.algorithm.worker import Algorithm as a
-from elements.statistic.worker import Statistic as s
-from elements.weights.worker import WEIGHTS as w
-from elements.notification.worker import TelegramNotification as tlg
-from source.settings.settings import (
-    handler,
-    TIME_UPDATE,
-    SET_ITERATION,
-    START_VALUE,
-    NULL_DATA_ERROR,
-    END_INTERATION_MESSAGE,
-    ERROR_MESSAGE,
-    EMPTY_STATISTIC_MESSAGE,
-    FIRST_MESSAGE
-)
-from source.settings.exceptions import NullData
+from datetime import datetime
+from time import sleep
+from zoneinfo import ZoneInfo
+
+from elements.algorithm.worker import Algorithm
+from elements.backtest.worker import Backtest
+from elements.data.loader import DataLoader
+from elements.features.worker import build_dataset
+from elements.notification.worker import TelegramNotification as tlg, signals_message
+from source.settings.settings import handler, TIMEZONE, SIGNAL_TIME, LOOP_SLEEP
+
+
 # Запуск логгера.
 logger = logging.getLogger(name=__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(handler)
 
+SERVICE = 'iss_filter_algorithm'
 
-if __name__ == '__main__':
-    counter = START_VALUE
-    flag_prepare_data = True
-    a.create_all_tables()
-    #tlg.send_message(text=FIRST_MESSAGE)
-    if len(sys.argv) > 1:
-        command = sys.argv[1]
-        if command == "statistic":
-            s.show_statistic()
-            sys.exit()
-        
+
+def msk_now() -> datetime:
+    return datetime.now(ZoneInfo(TIMEZONE))
+
+
+def run_signals(use_ai: bool = True):
+    signals = Algorithm.generate_signals(use_ai=use_ai)
+    tlg.send_message(signals_message(signals))
+    return signals
+
+
+def daemon():
+    last_run = None
+    tlg.send_message('Сервис стартовал.')
     while True:
         try:
-            start_time = time()
-            a.save_activity_time()
-            if a.is_not_work_time():
-                logger.info(f'is not work time {a.curent_msc_time()}')
-                continue
-            logger.info(f'work time: {a.curent_msc_time()}')
-
-            a.data_prepare()
-            logger.info('data prepare success')
-            if a.is_trade_time():
-                filter_data = a.data_filter()
-                if (
-                    counter == START_VALUE
-                    and filter_data == NULL_DATA_ERROR
-                ):
-                    flag_prepare_data = True
-                    counter = START_VALUE
-                    continue
-                logger.info('data filter success')
-
-                if flag_prepare_data:
-                    s.prepare_start_data()
-                    flag_prepare_data = False
-                    logger.info('prepare start data success')
-
-                counter += 1
-                if counter >= SET_ITERATION:
-                    flag_prepare_data = True
-                    counter = START_VALUE
-
-                    w.weights_correct()
-                    logger.info('weights counter success')
-                    if not s.result_statistic():
-                        raise NullData
-                    #tlg.send_message(text=END_INTERATION_MESSAGE)
-
-            else:
-                flag_prepare_data = True
-                counter = START_VALUE
-        #except NullData:
-            #tlg.send_message(text=EMPTY_STATISTIC_MESSAGE)
+            now = msk_now()
+            Algorithm.save_activity(SERVICE, f'last signals run: {last_run}')
+            current = now.hour + now.minute / 100
+            if now.weekday() < 5 and current >= SIGNAL_TIME and last_run != now.date():
+                loader = DataLoader()
+                loader.update_history()
+                loader.update_hour_history()
+                loader.update_dividends()
+                run_signals()
+                last_run = now.date()
         except Exception as error:
-            #tlg.send_message(text=ERROR_MESSAGE + str(error))
-            logger.error(error)
-        finally:
-            a.delete_old_stat_base()
-            logger.info(f'Итерация # {counter} окончена')
-            sleep(TIME_UPDATE)
+            logger.exception(error)
+            tlg.send_message(f'Получена ошибка - {error}')
+        sleep(LOOP_SLEEP)
+
+
+def show_statistic():
+    rows = Algorithm.run_sql_command(
+        'SELECT * FROM backtest_runs ORDER BY id DESC LIMIT 10'
+    )
+    for row in rows:
+        logger.info(
+            f'{row["CREATED_AT"]} {row["STRATEGY"]}: {row["PERIOD_START"]}..{row["PERIOD_END"]}, '
+            f'сделок {row["TRADES"]}, win {row["WIN_RATE"]:.1%}, средняя {row["AVG_TRADE"]:.2%}, '
+            f'итог {row["TOTAL_RETURN"]:.1%}, просадка {row["MAX_DRAWDOWN"]:.1%}, '
+            f'Sharpe {row["SHARPE"]:.2f}'
+        )
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('command', choices=['update', 'backtest', 'signals', 'statistic', 'run'])
+    parser.add_argument('--no-ai', action='store_true', help='не вызывать AI_Manager')
+    parser.add_argument('--days', type=int, default=250, help='длина теста в торговых днях')
+    args = parser.parse_args()
+
+    Algorithm.create_all_tables()
+    if args.command == 'update':
+        loader = DataLoader()
+        loader.update_history()
+        loader.update_hour_history()
+        loader.update_dividends()
+    elif args.command == 'backtest':
+        Backtest.run(build_dataset(Algorithm.load_candles()), test_days=args.days)
+    elif args.command == 'signals':
+        for signal in run_signals(use_ai=not args.no_ai):
+            logger.info(signal)
+    elif args.command == 'statistic':
+        show_statistic()
+    else:
+        daemon()

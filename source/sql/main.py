@@ -1,17 +1,25 @@
-from dotenv import load_dotenv
+from datetime import datetime
 
+import pandas as pd
 import sqlalchemy as sa
+from sqlalchemy import event
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
-from source.sql.tables import Base
+from source.sql.tables import Base, Candle, HourCandle, Security, Activity
 from source.settings.settings import DB_URL
-load_dotenv()
 
 
-main_engine = sa.create_engine(
-    DB_URL,
-    echo=False
-)
+main_engine = sa.create_engine(DB_URL, echo=False)
+
+if main_engine.dialect.name == 'sqlite':
+    @event.listens_for(main_engine, 'connect')
+    def sqlite_pragmas(connection, _):
+        # WAL — чтобы три сервиса могли одновременно читать и писать одну БД.
+        cursor = connection.cursor()
+        cursor.execute('PRAGMA journal_mode=WAL')
+        cursor.execute('PRAGMA busy_timeout=30000')
+        cursor.close()
 
 
 class SQLmain:
@@ -21,32 +29,109 @@ class SQLmain:
         Base.metadata.create_all(bind=main_engine)
 
     @staticmethod
-    def reload_db(table):
+    def upsert(table, rows: list[dict], keys: list[str]):
+        """ Вставка с обновлением при конфликте уникального ключа."""
+        if not rows:
+            return
         with Session(bind=main_engine) as s:
-            Base.metadata.drop_all(
-                    bind=main_engine,
-                    tables=[table.__table__]
-                )
-            Base.metadata.create_all(
-                bind=main_engine,
-                tables=[table.__table__]
-            )
+            if main_engine.dialect.name == 'sqlite':
+                statement = sqlite_insert(table)
+            else:
+                from sqlalchemy.dialects.postgresql import insert as pg_insert
+                statement = pg_insert(table)
+            update_columns = {
+                column.name: statement.excluded[column.name]
+                for column in table.__table__.columns
+                if column.name not in keys and not column.primary_key
+            }
+            # SQLite ограничивает число параметров в запросе — пишем пачками.
+            for start in range(0, len(rows), 500):
+                chunk = statement.values(rows[start:start + 500])
+                s.execute(chunk.on_conflict_do_update(index_elements=keys, set_=update_columns))
             s.commit()
+
+    @classmethod
+    def save_candles(cls, secid: str, frame: pd.DataFrame):
+        rows = [
+            {
+                'SECID': secid,
+                'DATE': row.date.date(),
+                'OPEN': float(row.open),
+                'HIGH': float(row.high),
+                'LOW': float(row.low),
+                'CLOSE': float(row.close),
+                'VALUE': float(row.value) if pd.notna(row.value) else None,
+                'VOLUME': float(row.volume) if pd.notna(row.volume) else None,
+            }
+            for row in frame.itertuples()
+        ]
+        cls.upsert(Candle, rows, ['SECID', 'DATE'])
+
+    @classmethod
+    def save_hour_candles(cls, secid: str, frame: pd.DataFrame):
+        rows = [
+            {
+                'SECID': secid,
+                'BEGIN': row.begin.to_pydatetime(),
+                'OPEN': float(row.open),
+                'HIGH': float(row.high),
+                'LOW': float(row.low),
+                'CLOSE': float(row.close),
+                'VALUE': float(row.value) if pd.notna(row.value) else None,
+                'VOLUME': float(row.volume) if pd.notna(row.volume) else None,
+            }
+            for row in frame.itertuples()
+        ]
+        cls.upsert(HourCandle, rows, ['SECID', 'BEGIN'])
 
     @staticmethod
-    def insert_data(data, table):
-        with Session(bind=main_engine) as s:
-            Base.metadata.drop_all(
-                    bind=main_engine,
-                    tables=[table.__table__]
-                )
-            Base.metadata.create_all(
-                bind=main_engine,
-                tables=[table.__table__]
-            )
+    def load_hour_candles(secids: list[str] | None = None) -> pd.DataFrame:
+        query = sa.select(HourCandle.__table__)
+        if secids:
+            query = query.where(HourCandle.SECID.in_(secids))
+        with main_engine.connect() as connection:
+            frame = pd.read_sql(query, connection)
+        frame['BEGIN'] = pd.to_datetime(frame['BEGIN'])
+        return frame.drop(columns='id').sort_values(['SECID', 'BEGIN'])
 
-            s.execute(sa.insert(table).values(data))
-            s.commit()
+    @staticmethod
+    def last_hour_candle_dates() -> dict:
+        with Session(bind=main_engine) as s:
+            rows = s.execute(
+                sa.select(HourCandle.SECID, sa.func.max(HourCandle.BEGIN)).group_by(HourCandle.SECID)
+            ).all()
+        return {secid: last for secid, last in rows}
+
+    @staticmethod
+    def load_candles(secids: list[str] | None = None) -> pd.DataFrame:
+        query = sa.select(Candle.__table__)
+        if secids:
+            query = query.where(Candle.SECID.in_(secids))
+        with main_engine.connect() as connection:
+            frame = pd.read_sql(query, connection)
+        frame['DATE'] = pd.to_datetime(frame['DATE'])
+        return frame.drop(columns='id').sort_values(['SECID', 'DATE'])
+
+    @staticmethod
+    def last_candle_dates() -> dict:
+        with Session(bind=main_engine) as s:
+            rows = s.execute(
+                sa.select(Candle.SECID, sa.func.max(Candle.DATE)).group_by(Candle.SECID)
+            ).all()
+        return {secid: last for secid, last in rows}
+
+    @staticmethod
+    def securities() -> pd.DataFrame:
+        with main_engine.connect() as connection:
+            return pd.read_sql(sa.select(Security.__table__), connection)
+
+    @classmethod
+    def save_activity(cls, service: str, message: str = ''):
+        cls.upsert(
+            Activity,
+            [{'SERVICE': service, 'LAST_TIME': datetime.now(), 'MESSAGE': message[:500]}],
+            ['SERVICE'],
+        )
 
     @staticmethod
     def append_data(data, table):
@@ -54,47 +139,7 @@ class SQLmain:
             s.execute(sa.insert(table).values(data))
             s.commit()
 
-    @classmethod
-    def get_all_data(self, table):
-        with Session(bind=main_engine) as s:
-
-            return self.correct_data_in_dict(data=s.execute(
-                sa.select('*').select_from(table)
-            ).all())
-
-    @classmethod
-    def get_all_data_with_sort_score(self, table):
-        with Session(bind=main_engine) as s:
-
-            return self.correct_data_in_dict(data=s.execute(
-                sa.select('*').select_from(table).order_by(
-                    sa.desc(table.FILTER_SCORE)
-                )
-            ).all())
-
-    @classmethod
-    def get_share_on_secid(self, table, secid):
-        with Session(bind=main_engine) as s:
-
-            return self.correct_data_in_dict(data=s.execute(
-                sa.select('*').select_from(table).where(table.SECID == secid)
-            ))
-
-    @classmethod
-    def delete_stat(self, table, id):
-        with Session(bind=main_engine) as s:
-
-            s.query(table).filter(table.id < id).delete()
-            s.commit()
-
     @staticmethod
-    def correct_data_in_dict(data):
-        result = []
-        for el in data:
-            result.append(el._asdict())
-        return result
-
-    @classmethod
-    def run_sql_command(self, command):
+    def run_sql_command(command, params=None):
         with Session(bind=main_engine) as s:
-            return s.execute(sa.text(command)).mappings().fetchall()
+            return s.execute(sa.text(command), params or {}).mappings().fetchall()

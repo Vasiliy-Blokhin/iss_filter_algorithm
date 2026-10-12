@@ -1,9 +1,8 @@
-from dotenv import load_dotenv
+from datetime import date, datetime
 from typing import Annotated, Optional
 
+from sqlalchemy import UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-
-load_dotenv()
 
 intpk = Annotated[int, mapped_column(primary_key=True)]
 
@@ -12,177 +11,113 @@ class Base(DeclarativeBase):
     pass
 
 
-# Создание модели (таблицы в БД).
-class PrepareData(Base):
-    """ Сохранение данных, полученных с Мосбиржи."""
-    __tablename__ = 'prepare_data'
+class Candle(Base):
+    """ Дневные свечи акций TQBR и индекса IMOEX."""
+    __tablename__ = 'candles'
+    __table_args__ = (UniqueConstraint('SECID', 'DATE'),)
 
     id: Mapped[intpk]
-    SECID: Mapped[Optional[str]]
+    SECID: Mapped[str] = mapped_column(index=True)
+    DATE: Mapped[date] = mapped_column(index=True)
+    OPEN: Mapped[float]
+    HIGH: Mapped[float]
+    LOW: Mapped[float]
+    CLOSE: Mapped[float]
+    VALUE: Mapped[Optional[float]]
+    VOLUME: Mapped[Optional[float]]
+
+
+class HourCandle(Base):
+    """ Часовые свечи ликвидных акций (для внутридневных признаков)."""
+    __tablename__ = 'hour_candles'
+    __table_args__ = (UniqueConstraint('SECID', 'BEGIN'),)
+
+    id: Mapped[intpk]
+    SECID: Mapped[str] = mapped_column(index=True)
+    BEGIN: Mapped[datetime] = mapped_column(index=True)
+    OPEN: Mapped[float]
+    HIGH: Mapped[float]
+    LOW: Mapped[float]
+    CLOSE: Mapped[float]
+    VALUE: Mapped[Optional[float]]
+    VOLUME: Mapped[Optional[float]]
+
+
+class Dividend(Base):
+    """ Дивиденды: дата закрытия реестра и размер на акцию."""
+    __tablename__ = 'dividends'
+    __table_args__ = (UniqueConstraint('SECID', 'REGISTRY_DATE'),)
+
+    id: Mapped[intpk]
+    SECID: Mapped[str] = mapped_column(index=True)
+    REGISTRY_DATE: Mapped[date]
+    ANNOUNCE_DATE: Mapped[Optional[date]]  # пусто — дата объявления неизвестна
+    VALUE: Mapped[float]
+    SOURCE: Mapped[Optional[str]]
+
+
+class Security(Base):
+    """ Справочник бумаг (лотность, шаг цены, сектор)."""
+    __tablename__ = 'securities'
+
+    SECID: Mapped[str] = mapped_column(primary_key=True)
     SHORTNAME: Mapped[Optional[str]]
-    PREVPRICE: Mapped[Optional[float]]
-    PREVWAPRICE: Mapped[Optional[float]]
-    PREVDATE: Mapped[Optional[str]]
-    STATUS: Mapped[Optional[str]]
-    WAPTOPREVWAPRICE: Mapped[Optional[float]]
-    UPDATETIME: Mapped[Optional[str]]
-    LCURRENTPRICE: Mapped[Optional[float]]
-    LAST: Mapped[Optional[float]]
-    PRICEMINUSPREVWAPRICE: Mapped[Optional[float]]
-    DATAUPDATE: Mapped[Optional[str]]
-    CURRENCYID: Mapped[Optional[str]]
-    TRADINGSESSION: Mapped[Optional[str]]
-    LASTCHANGEPRCNT: Mapped[Optional[float]]
-    WAPRICE: Mapped[Optional[float]]
-    LASTCNGTOLASTWAPRICE: Mapped[Optional[float]]
-    WAPTOPREVWAPRICEPRCNT: Mapped[Optional[float]]
-    MARKETPRICE: Mapped[Optional[float]]
-    ISSUECAPITALIZATION: Mapped[Optional[float]]
-    TRENDISSUECAPITALIZATION: Mapped[Optional[float]]
-    BOARDID: Mapped[Optional[str]]
-    LOTSIZE: Mapped[Optional[float]]
-    HIGH: Mapped[Optional[float]]
-    LOW: Mapped[Optional[float]]
+    LOTSIZE: Mapped[Optional[int]]
+    MINSTEP: Mapped[Optional[float]]
+    SECTOR: Mapped[Optional[str]]
 
 
-class FilterData(Base):
-    """ Оцененные алгоритмом данные с Мосбиржи."""
-    __tablename__ = 'filter_data'
+class Signal(Base):
+    """ Сигналы на покупку с горизонтом удержания 1-2 дня.
+
+    Читается исполнителем (ALOR_TICKETS_BOT) и Telegram-ботом.
+    """
+    __tablename__ = 'signals'
+    __table_args__ = (UniqueConstraint('SECID', 'SIGNAL_DATE'),)
 
     id: Mapped[intpk]
-    SECID: Mapped[Optional[str]]
+    SECID: Mapped[str] = mapped_column(index=True)
     SHORTNAME: Mapped[Optional[str]]
-    PREVPRICE: Mapped[Optional[float]]
-    PREVWAPRICE: Mapped[Optional[float]]
-    PREVDATE: Mapped[Optional[str]]
-    STATUS: Mapped[Optional[str]]
-    WAPTOPREVWAPRICE: Mapped[Optional[float]]
-    UPDATETIME: Mapped[Optional[str]]
-    LCURRENTPRICE: Mapped[Optional[float]]
-    LAST: Mapped[Optional[float]]
-    PRICEMINUSPREVWAPRICE: Mapped[Optional[float]]
-    DATAUPDATE: Mapped[Optional[str]]
-    CURRENCYID: Mapped[Optional[str]]
-    TRADINGSESSION: Mapped[Optional[str]]
-    LASTCHANGEPRCNT: Mapped[Optional[float]]
-    WAPRICE: Mapped[Optional[float]]
-    LASTCNGTOLASTWAPRICE: Mapped[Optional[float]]
-    WAPTOPREVWAPRICEPRCNT: Mapped[Optional[float]]
-    MARKETPRICE: Mapped[Optional[float]]
-    ISSUECAPITALIZATION: Mapped[Optional[float]]
-    TRENDISSUECAPITALIZATION: Mapped[Optional[float]]
-    BOARDID: Mapped[Optional[str]]
-    LOTSIZE: Mapped[Optional[str]]
-    FILTER_SCORE: Mapped[Optional[float]]
-    STATUS_FILTER: Mapped[Optional[str]]
-    HIGH: Mapped[Optional[float]]
-    LOW: Mapped[Optional[float]]
-
-
-class CurrentScore(Base):
-    """ Текущие данные для работы статистики и весов."""
-    __tablename__ = 'current_score'
-
-    id: Mapped[intpk]
-    SECID: Mapped[Optional[str]]
-    WPTPWP_MAX: Mapped[Optional[float]]
-    LCP_MAX: Mapped[Optional[float]]
-    PMPWP_WP_MAX: Mapped[Optional[float]]
-    LCTLWP_WP_MAX: Mapped[Optional[float]]
-    LCPRCNT_MAX: Mapped[Optional[float]]
-    LMP_MAX: Mapped[Optional[float]]
-    TIC_IC_MAX: Mapped[Optional[float]]
-    WPTPWP_CUR: Mapped[Optional[float]]
-    LCP_CUR: Mapped[Optional[float]]
-    PMPWP_WP_CUR: Mapped[Optional[float]]
-    LCTLWP_WP_CUR: Mapped[Optional[float]]
-    LCPRCNT_CUR: Mapped[Optional[float]]
-    LMP_CUR: Mapped[Optional[float]]
-    TIC_IC_CUR: Mapped[Optional[float]]
-    LAST: Mapped[Optional[float]]
-    LOTSIZE: Mapped[Optional[float]]
-    FILTER_SCORE: Mapped[Optional[float]]
-    STATUS_FILTER: Mapped[Optional[str]]
-
-
-class StartScore(Base):
-    """ Начальные данные для работы статистики и весов."""
-    __tablename__ = 'start_score'
-
-    id: Mapped[intpk]
-    SECID: Mapped[Optional[str]]
-    WPTPWP_MAX: Mapped[Optional[float]]
-    LCP_MAX: Mapped[Optional[float]]
-    PMPWP_WP_MAX: Mapped[Optional[float]]
-    LCTLWP_WP_MAX: Mapped[Optional[float]]
-    LCPRCNT_MAX: Mapped[Optional[float]]
-    LMP_MAX: Mapped[Optional[float]]
-    TIC_IC_MAX: Mapped[Optional[float]]
-    WPTPWP_CUR: Mapped[Optional[float]]
-    LCP_CUR: Mapped[Optional[float]]
-    PMPWP_WP_CUR: Mapped[Optional[float]]
-    LCTLWP_WP_CUR: Mapped[Optional[float]]
-    LCPRCNT_CUR: Mapped[Optional[float]]
-    LMP_CUR: Mapped[Optional[float]]
-    TIC_IC_CUR: Mapped[Optional[float]]
-    LAST: Mapped[Optional[float]]
-    LOTSIZE: Mapped[Optional[float]]
-    FILTER_SCORE: Mapped[Optional[float]]
-    STATUS_FILTER: Mapped[Optional[str]]
-
-
-class Weights(Base):
-    """ Весы для работы алгоритма."""
-    __tablename__ = 'weights'
-
-    id: Mapped[intpk]
-    WPTPWP: Mapped[Optional[float]]
-    LCP: Mapped[Optional[float]]
-    PMPWP_WP: Mapped[Optional[float]]
-    LCTLWP_WP: Mapped[Optional[float]]
-    LCPRCNT: Mapped[Optional[float]]
-    LMP: Mapped[Optional[float]]
-    TIC_IC: Mapped[Optional[float]]
-
-
-class AllStatistic(Base):
-    """ Статистика работы алгоритма."""
-    __tablename__ = 'all_statistic'
-
-    id: Mapped[intpk]
-    statistic_prcnt: Mapped[Optional[float]]
-    neutral_prcnt: Mapped[Optional[float]]
-    potential_profitability: Mapped[Optional[float]]
-    count_price_after: Mapped[Optional[float]]
-
-
-class SectorSecidNames(Base):
-    """ pass """
-    __tablename__ = 'secid_sector'
-
-    id: Mapped[intpk]
-    SECID: Mapped[Optional[str]]
     SECTOR: Mapped[Optional[str]]
+    SIGNAL_DATE: Mapped[date] = mapped_column(index=True)  # дата свечи-основания
+    CREATED_AT: Mapped[datetime]
+    CLOSE: Mapped[float]
+    ATR: Mapped[float]
+    PROBABILITY: Mapped[float]  # вероятность прибыли модели
+    EXPECTED_RETURN: Mapped[float]  # ожидаемая доходность после издержек
+    STOP_PRICE: Mapped[float]
+    TAKE_PRICE: Mapped[float]
+    HOLD_DAYS: Mapped[int]
+    FEATURES: Mapped[Optional[str]]  # JSON с признаками
+    AI_DECISION: Mapped[Optional[str]]  # buy / skip / n/a
+    AI_CONFIDENCE: Mapped[Optional[int]]
+    AI_REASON: Mapped[Optional[str]]
+    STATUS: Mapped[str] = mapped_column(default='new')  # new / approved / rejected / used / expired
 
-class SectorNameRU(Base):
-    """ pass """
-    __tablename__ = 'sector_dict_ru'
+
+class BacktestRun(Base):
+    """ Результаты бэктестов (walk-forward)."""
+    __tablename__ = 'backtest_runs'
 
     id: Mapped[intpk]
-    SECTOR: Mapped[Optional[str]]
-    NAME: Mapped[Optional[str]]
+    CREATED_AT: Mapped[datetime]
+    STRATEGY: Mapped[str]
+    PERIOD_START: Mapped[Optional[date]]
+    PERIOD_END: Mapped[Optional[date]]
+    TRADES: Mapped[int]
+    WIN_RATE: Mapped[float]
+    AVG_TRADE: Mapped[float]  # средняя доходность сделки, доля
+    TOTAL_RETURN: Mapped[float]
+    MAX_DRAWDOWN: Mapped[float]
+    SHARPE: Mapped[float]
+    PROFIT_FACTOR: Mapped[float]
+    PARAMS: Mapped[Optional[str]]
 
-class SectorNameEN(Base):
-    """ pass """
-    __tablename__ = 'sector_dict_en'
-
-    id: Mapped[intpk]
-    SECTOR: Mapped[Optional[str]]
-    NAME: Mapped[Optional[str]]
 
 class Activity(Base):
-    """ Время активности. """
+    """ Время последней активности сервисов (для контроля зависаний)."""
     __tablename__ = 'activity'
 
-    id: Mapped[intpk]
-    last_time: Mapped[Optional[float]]
+    SERVICE: Mapped[str] = mapped_column(primary_key=True)
+    LAST_TIME: Mapped[datetime]
+    MESSAGE: Mapped[Optional[str]]

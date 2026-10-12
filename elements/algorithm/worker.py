@@ -1,411 +1,132 @@
-""" Описание класса, для работы с БД."""
-
+""" Формирование сигналов на следующий торговый день."""
+import json
 import logging
 from datetime import datetime
-import pytz
+from zoneinfo import ZoneInfo
 
-from source.json_worker.worker import JSONSaveAndRead
+import pandas as pd
+import sqlalchemy as sa
+from sqlalchemy.orm import Session
+
+from elements.ai.worker import AIReviewer, fetch_news
+from elements.features.worker import FEATURES, build_dataset
+from elements.features.intraday import dividend_features
+from elements.strategy.worker import score_model, select, train_model
 from source.settings.settings import (
     handler,
-    STATUS_UP,
-    STATUS_DOWN,
-    STATUS_MEDIUM,
-    MAX_SCORE,
-    WPTPWP_POINTS,
-    LCP_POINTS,
-    PMPWP_WP_POINTS,
-    LCTLWP_WP_POINTS,
-    LCPRCNT_POINTS,
-    ABSTRACT_COEFF,
-    BORDERS_SCORE,
-    LMP_POINTS,
-    STOP_TRADING,
-    SHARE_GROUPS,
-    TYPE_DATA_IMOEX,
-    NEEDFUL,
-    RUN_TRADING,
-    IMOEX_URL,
-    STATISTIC_NEED,
-    NULL_DATA_ERROR,
-    SPLYT_SYMB,
-    SIZE_STAT_BASE,
-    TIC_IC_POINTS,
-    GET_FILTER_DATA_COMMAND,
-    GET_STATISTIC_COMMAND,
-    RSS_NEWS_URL
+    AI_ENABLED,
+    AI_MIN_CONFIDENCE,
+    HOLD_DAYS,
+    STOP_ATR,
+    TAKE_ATR,
+    TIMEZONE,
 )
-from source.settings.module import interp_4_dote, interp_6_dote, ai_prompt_result
-from source.settings.exceptions import NullData
-from source.sql.main import SQLmain
+from source.sql.main import SQLmain, main_engine
 import source.sql.tables as tables
 
 
-# Запуск логгера.
 logger = logging.getLogger(name=__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(handler)
 
 
-class Algorithm(JSONSaveAndRead, SQLmain):
-    """ Класс для работы с API imoex (iss)."""
+class Algorithm(SQLmain):
+
     @classmethod
-    def data_filter(self):
-        """
-        Функиция для обработки даных по заданному алгоритму
-        и сохранения данных.
-        """
-        shares_data = self.get_all_data(tables.PrepareData)
-        weight_data = self.get_all_data(tables.Weights)
+    def generate_signals(cls, use_ai: bool = AI_ENABLED) -> list[dict]:
+        candles = cls.load_candles()
+        if candles.empty:
+            raise RuntimeError('Нет истории свечей: выполните `python main.py update`')
+        # Свеча текущего дня неполная, пока не закончилась вечерняя сессия.
+        now = datetime.now(ZoneInfo(TIMEZONE))
+        if now.hour < 23 or now.minute < 55:
+            candles = candles[candles['DATE'] < pd.Timestamp(now.date())]
+        panel = build_dataset(candles)
+        last_date = panel['DATE'].max()
+        dividends = pd.DataFrame(cls.run_sql_command('SELECT * FROM dividends'))
+        panel = dividend_features(panel, dividends)
 
-        param_score_list = []
-        data = []
+        model = train_model(panel, last_date + pd.Timedelta(days=1))
+        if model is None:
+            raise RuntimeError('Недостаточно истории для обучения модели')
+        logger.info(f'Важность признаков: {list(model.importance())[:8]}')
 
-        for share in shares_data:
-            try:
-                if (
-                    share['LAST'] == 0
-                    or share['LAST'] is None
-                ):
-                    continue
+        securities = cls.securities().set_index('SECID')
+        sectors = securities['SECTOR'].to_dict()
+        today = score_model(panel[panel['DATE'] == last_date], model)
+        chosen = select(today, sectors)
+        logger.info(f'Кандидатов на {last_date.date()}: {len(chosen)}')
 
-                weight = weight_data[0]
-                current_score = 0
-                param_score = {}
+        reviewer = AIReviewer() if use_ai else None
+        if reviewer and not reviewer.available():
+            logger.warning('AI_Manager недоступен — сигналы без ИИ-проверки')
+            reviewer = None
 
-                # Баллы по параметрам алгоритма.
-                wptpwp_max = WPTPWP_POINTS * weight.get('WPTPWP')
-                lcp_max = LCP_POINTS * weight.get('LCP')
-                pmpwp_max = PMPWP_WP_POINTS * weight.get('PMPWP_WP')
-                lctlw_max = LCTLWP_WP_POINTS * weight.get('LCTLWP_WP')
-                lcprcnt_max = LCPRCNT_POINTS * weight.get('LCPRCNT')
-                lmp_max = LMP_POINTS * weight.get('LMP')
-                tic_ic_max = TIC_IC_POINTS * weight.get('TIC_IC')
+        signals = []
+        for _, row in chosen.iterrows():
+            secid = row['SECID']
+            info = securities.loc[secid] if secid in securities.index else {}
+            features = {name: round(float(row[name]), 4) for name in FEATURES if pd.notna(row[name])}
+            signal = {
+                'SECID': secid,
+                'SHORTNAME': info.get('SHORTNAME') if len(info) else None,
+                'SECTOR': sectors.get(secid, 'unknown'),
+                'SIGNAL_DATE': last_date.date(),
+                'CREATED_AT': datetime.now(),
+                'CLOSE': float(row['CLOSE']),
+                'ATR': float(row['ATR']),
+                'PROBABILITY': float(row['PROBABILITY']),
+                'EXPECTED_RETURN': float(row['EXPECTED_RETURN']),
+                # Уровни от закрытия; исполнитель пересчитает их от фактической цены входа.
+                'STOP_PRICE': float(row['CLOSE'] - STOP_ATR * row['ATR']),
+                'TAKE_PRICE': float(row['CLOSE'] + TAKE_ATR * row['ATR']),
+                'HOLD_DAYS': HOLD_DAYS,
+                'FEATURES': features,
+                'AI_DECISION': 'n/a',
+                'AI_CONFIDENCE': None,
+                'AI_REASON': None,
+                'STATUS': 'approved',
+            }
+            if reviewer:
+                signal.update(cls.ai_review(reviewer, signal, candles))
+            signals.append(signal)
 
-                max_weights = sum(
-                    [wptpwp_max, lcp_max, pmpwp_max, tic_ic_max,
-                        lctlw_max, lcprcnt_max, lmp_max]
-                )
+        cls.save_signals(signals, last_date.date())
+        return signals
 
-                param_score['WPTPWP_MAX'] = wptpwp_max
-                param_score['LCP_MAX'] = lcp_max
-                param_score['PMPWP_WP_MAX'] = pmpwp_max
-                param_score['LCTLWP_WP_MAX'] = lctlw_max
-                param_score['LCPRCNT_MAX'] = lcprcnt_max
-                param_score['LMP_MAX'] = lmp_max
-                param_score['TIC_IC_MAX'] = tic_ic_max
-# start__________________________________________________________
-
-                wptpwp = -interp_4_dote(
-                    dote_prcnt=share['WAPTOPREVWAPRICEPRCNT'],
-                    point_limits=[-wptpwp_max, wptpwp_max],
-                    prcnt_limits=[-1.62, 1.62],
-                    prcnt_start_limit=0.12
-                )
-                current_score += wptpwp
-                param_score['WPTPWP_CUR'] = wptpwp
-
-# _______________________________________________________________
-
-                if share['LCURRENTPRICE'] >= share['LAST']:
-                    lcp = lcp_max * weight['LCP']
-                    current_score += lcp
-                    param_score['LCP_CUR'] = lcp
-                elif share['LCURRENTPRICE'] < share['LAST']:
-                    lcp = lcp_max * weight['LCP']
-                    current_score -= lcp
-                    param_score['LCP_CUR'] = -lcp
-                else:
-                    param_score['LCP_CUR'] = 0
-
-# _______________________________________________________________
-
-                pmpwp_wp = -interp_6_dote(
-                    dote_prcnt=share['PRICEMINUSPREVWAPRICE']/share['WAPRICE'],
-                    point_limits=[-pmpwp_max, pmpwp_max],
-                    prcnt_limits=[-1.6, -0.8, 0.8, 1.6],
-                    prcnt_start_limit=0.05
-                ) * weight['PMPWP_WP']
-                current_score += pmpwp_wp
-                param_score['PMPWP_WP_CUR'] = pmpwp_wp
-# _______________________________________________________________
-
-                lctlwp_wp = -interp_6_dote(
-                    dote_prcnt=share['LASTCNGTOLASTWAPRICE']/share['WAPRICE'],
-                    point_limits=[-lctlw_max, lctlw_max],
-                    prcnt_limits=[-1.6, -0.8, 0.8, 1.6],
-                    prcnt_start_limit=0.05
-                ) * weight['LCTLWP_WP']
-                current_score += lctlwp_wp
-                param_score['LCTLWP_WP_CUR'] = lctlwp_wp
-
-# _______________________________________________________________
-
-                lcprcnt = interp_4_dote(
-                    dote_prcnt=share['LASTCHANGEPRCNT'],
-                    point_limits=[-lcprcnt_max, lcprcnt_max],
-                    prcnt_limits=[-1, 1],
-                    prcnt_start_limit=0.1
-                ) * weight['LCPRCNT']
-                current_score += lcprcnt
-                param_score['LCPRCNT_CUR'] = lcprcnt
-
-# _______________________________________________________________
-                lmp = lmp_max * weight['LMP']
-                if (
-                    share.get('LAST') > share.get('MARKETPRICE')
-                ):
-                    current_score -= lmp
-                    param_score['LMP_CUR'] = -lmp
-                elif (
-                    share.get('LAST') < share.get('MARKETPRICE')
-                ):
-                    current_score += lmp
-                    param_score['LMP_CUR'] = lmp
-                else:
-                    param_score['LMP_CUR'] = 0
-# _______________________________________________________________
-
-                capitalization_diff = (
-                    share['TRENDISSUECAPITALIZATION']
-                    / share['ISSUECAPITALIZATION']
-                )
-                tic_ic = interp_4_dote(
-                    dote_prcnt=capitalization_diff,
-                    point_limits=[-tic_ic_max, tic_ic_max],
-                    prcnt_limits=[-1.65, 1.65],
-                    prcnt_start_limit=0.1
-                ) * weight['TIC_IC']
-                current_score += tic_ic
-                param_score['TIC_IC_CUR'] = tic_ic
-# end____________________________________________________________
-
-                share['FILTER_SCORE'] = (
-                    (
-                        100 * current_score / max_weights
-                    )
-                )
-                if share['FILTER_SCORE'] >= BORDERS_SCORE:
-                    share['STATUS_FILTER'] = STATUS_UP
-
-                    for key, value in share.items():
-                        if key in STATISTIC_NEED:
-                            param_score[key] = value
-                    param_score_list.append(param_score)
-
-                elif share['FILTER_SCORE'] <= -BORDERS_SCORE:
-                    share['STATUS_FILTER'] = STATUS_DOWN
-
-                else:
-                    share['STATUS_FILTER'] = STATUS_MEDIUM
-
-                data.append(share)
-            except Exception:
-                continue
-
+    @staticmethod
+    def ai_review(reviewer: AIReviewer, signal: dict, candles: pd.DataFrame) -> dict:
+        history = candles[candles['SECID'] == signal['SECID']].tail(10)
+        last_candles = [
+            [row.DATE.strftime('%d.%m'), row.OPEN, row.HIGH, row.LOW, row.CLOSE,
+             round((row.VALUE or 0) / 1e6, 1)]
+            for row in history.itertuples()
+        ]
+        news = fetch_news([signal['SECID'], signal.get('SHORTNAME') or ''])
         try:
-            if data == [] or param_score_list == []:
-                raise NullData
-            #logger.info('filter_data: ' + str(data[0]))
-            #logger.info('\n\ncurrent_score: ' + str(param_score_list[0]))
-            self.insert_data(
-                data=data,
-                table=tables.FilterData
-            )
-            self.insert_data(
-                data=param_score_list,
-                table=tables.CurrentScore
-            )
-        except NullData:
-            logger.error(
-                'filter data or params score is null'
-            )
-            return NULL_DATA_ERROR
+            verdict = reviewer.review(signal, last_candles, news)
         except Exception as error:
-            logger.error(error)
-
-    @classmethod
-    def is_trade_time(self):
-        if self.get_all_data(
-            table=tables.PrepareData
-        )[0]['TRADINGSESSION'] == STOP_TRADING:
-            logger.info('Торги приостановлены, работа не ведется')
-            return False
-        return True
-
-    @staticmethod
-    def curent_msc_time():
-        timezone = 'Europe/Moscow'
-        current_msc_time_h = datetime.now(pytz.timezone(timezone)).hour
-        current_msc_time_m = datetime.now(pytz.timezone(timezone)).minute
-        return current_msc_time_h + current_msc_time_m / 100
-
-    @staticmethod
-    def curent_data():
-        date = '{:%d-%m-%y}'.format(datetime.now()).split(SPLYT_SYMB)
+            logger.error(f'ИИ-проверка {signal["SECID"]} не удалась: {error}')
+            return {'AI_DECISION': 'error', 'AI_REASON': str(error)[:500]}
+        approved = verdict['decision'] == 'buy' or verdict['confidence'] < AI_MIN_CONFIDENCE
+        logger.info(f'ИИ {signal["SECID"]}: {verdict}')
         return {
-            'day': date[0],
-            'month': date[1],
-            'year': date[2]
+            'AI_DECISION': verdict['decision'],
+            'AI_CONFIDENCE': verdict['confidence'],
+            'AI_REASON': verdict['reason'],
+            'STATUS': 'approved' if approved else 'rejected',
         }
 
     @classmethod
-    def is_not_work_time(self, current_time=None):
-        if current_time is None:
-            current_time = self.curent_msc_time()
-
-        if (
-            (current_time < 9 and current_time > 23)
-        ):
-            return True
-
-        return False
-
-# prepare data ________________________________________
-
-    @classmethod
-    def sorted_data(self, data):
-        secid_list = []
-        for share in data:
-            secid = share.get('SECID')
-            if secid in secid_list:
-                data.remove(share)
-                continue
-            secid_list.append(secid)
-        return data
-
-    @classmethod
-    def data_prepare(self):
-        """ Фильтрация данных, полученных с запроса."""
-        result = []
-        data_list = []
-        logger.info('get response info from ISS')
-        # Фильтрация полученных данных (из разных "графов").
-        for type_data in TYPE_DATA_IMOEX:
-            for element in self.get_api_response(
-                url=IMOEX_URL
-            )[1][type_data]:
-                # Оставляет только акции.
-                if (
-                    type_data == 'securities'
-                    and element.get('INSTRID') != 'EQIN'
-                ):
-                    continue
-                if element.get('BOARDID') not in SHARE_GROUPS:
-                    continue
-                new_dict = {}
-                # Добавление только необходимых параметров из списка.
-                for key, value in element.items():
-                    if key in NEEDFUL:
-                        new_dict[key] = value
-                data_list.append(new_dict)
-            result.append(data_list)
-
-        self.insert_data(
-            data=self.union_api_response(*result),
-            table=tables.PrepareData
-        )
-
-    @classmethod
-    def union_api_response(self, data_sec, data_md):
-        """ Добавляет доплнительные параметры и сводит всё в одну БД."""
-        result = []
-        for el_sec in data_sec:
-            for el_md in data_md:
-                # Сведение БД в одну.
-                if el_sec['SECID'] == el_md['SECID']:
-                    el_sec.update(el_md)
-            # Добавление новых параметров.
-            if el_sec['TRADINGSESSION'] is None:
-                el_sec['TRADINGSESSION'] = STOP_TRADING
-            elif el_sec['TRADINGSESSION'] == '1':
-                el_sec['TRADINGSESSION'] = RUN_TRADING
-
-            if el_sec['CURRENCYID'] == 'SUR':
-                el_sec['CURRENCYID'] = 'рубль'
-
-            format = '%H:%M:%S (%d.%m)'
-            el_sec['DATAUPDATE'] = (
-                datetime.now(pytz.timezone('Europe/Moscow'))
-            ).strftime(format)
-
-            result.append(el_sec)
-        # Проверка и вывод выходных данных.
-
-        return self.sorted_data(result)
-
-# __________________________________________________________
-
-    @classmethod
-    def save_activity_time(self):
-        self.insert_data(
-            table=tables.Activity,
-            data=[{'last_time': self.curent_msc_time()}]
-        )
-
-    @classmethod
-    def delete_old_stat_base(self):
-        """try:
-            if len(self.get_all_data(
-                table=tables.AllStatistic
-            )) > SIZE_STAT_BASE:
-                last_id = int(self.get_all_data(
-                    table=tables.AllStatistic
-                )[-1]['id'])
-
-                self.delete_stat(
-                    table=tables.AllStatistic,
-                    id=last_id-SIZE_STAT_BASE
-                )
-            logger.info(
-                f'''len - {len(self.get_all_data(
-                table=tables.AllStatistic
-            )) > SIZE_STAT_BASE}\n
-                last id - {last_id}\n
-                new id - {self.get_all_data(
-                    table=tables.AllStatistic
-                )[-1]['id']}\n'''
+    def save_signals(cls, signals: list[dict], signal_date):
+        with Session(bind=main_engine) as s:
+            # Неисполненные сигналы прошлых дней больше не актуальны.
+            s.execute(
+                sa.update(tables.Signal)
+                .where(tables.Signal.SIGNAL_DATE < signal_date)
+                .where(tables.Signal.STATUS.in_(['new', 'approved']))
+                .values(STATUS='expired')
             )
-        except Exception as error:
-            logger.error(error)"""
-        pass
-
-    @classmethod
-    def ai_prompts(self, stock_valuation=True):
-        # prepare data for ai prompt
-        share_data = self.run_sql_command(
-            GET_FILTER_DATA_COMMAND
-        )[0]
-        statistic_data = self.run_sql_command(
-            GET_STATISTIC_COMMAND
-        )[0]
-
-        if stock_valuation:
-            return ai_prompt_result(
-                secid=share_data['SECID'],
-                share_data=self.share_data_for_prompts(
-                    share_data
-                ),
-                filter_score=share_data['FILTER_SCORE'],
-                statistic=statistic_data,
-                #news=self.get_news()
-            )
-    
-    @classmethod
-    def get_news(self):
-        news_data = self.get_api_response(url=RSS_NEWS_URL)
-
-
-    @staticmethod
-    def share_data_for_prompts(share_data:dict):
-        result = {}
-        trash_keys = [
-            'id', 'SECID', 'SHORTNAME', 'STATUS',
-            'DATAUPDATE', 'CURRENCYID', 'TRADINGSESSION',
-            'BOARDID', 'STATUS_FILTER', 'FILTER_SCORE'
-        ]
-
-        for key, value in share_data.items():
-            if key in trash_keys:
-                continue
-            result[key] = value
-        return result
+            s.commit()
+        rows = [{**signal, 'FEATURES': json.dumps(signal['FEATURES'])} for signal in signals]
+        cls.upsert(tables.Signal, rows, ['SECID', 'SIGNAL_DATE'])
