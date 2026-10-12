@@ -1,8 +1,31 @@
-from os import getenv, getcwd
+""" Настройки движка сигналов (все значения можно переопределить в .env)."""
+from os import getenv
+from pathlib import Path
+import logging
 import sys
 
 from dotenv import load_dotenv
-import logging
+
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+load_dotenv(BASE_DIR / '.env')
+
+
+def env_float(name: str, default: float) -> float:
+    value = getenv(name)
+    return float(value) if value not in (None, '') else default
+
+
+def env_int(name: str, default: int) -> int:
+    value = getenv(name)
+    return int(value) if value not in (None, '') else default
+
+
+def env_bool(name: str, default: bool) -> bool:
+    value = getenv(name)
+    if value in (None, ''):
+        return default
+    return value.strip().lower() in ('1', 'true', 'yes', 'on')
 
 
 # Описание хандлера для логгера.
@@ -12,118 +35,72 @@ formater = logging.Formatter(
 )
 handler.setFormatter(formater)
 
-load_dotenv()
+# База данных. По умолчанию — общий SQLite-файл для всех трёх проектов.
+DATA_DIR = Path(getenv('DATA_DIR') or BASE_DIR.parent / 'data')
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+DB_URL = getenv('DB_URL') or f'sqlite:///{(DATA_DIR / "trading.db").as_posix()}'
 
-BASE_DIR = getenv('BASE_DIR') if getenv('BASE_DIR') else getcwd()
-REP_NAME = getenv('REP_NAME')
-RESTART_BASH_NAME = getenv('RESTART_BASH_NAME')
+# Сеть. MARKET_PROXY — прокси только для запросов к Мосбирже
+# (например, если системный VPN не пускает на iss.moex.com).
+ISS_BASE_URL = getenv('ISS_BASE_URL') or 'https://iss.moex.com/iss'
+MARKET_PROXY = getenv('MARKET_PROXY') or None
+HTTP_TIMEOUT = env_float('HTTP_TIMEOUT', 20)
+DIVIDENDS_URL = getenv('DIVIDENDS_URL') or 'https://www.dohod.ru/ik/analytics/dividend'
+HTTP_RETRIES = env_int('HTTP_RETRIES', 3)
 
-NEEDFUL = [
-    'SECID', 'SHORTNAME', 'PREVPRICE', 'PREVWAPRICE', 'PREVDATE',
-    'STATUS', 'WAPTOPREVWAPRICE', 'UPDATETIME', 'LCURRENTPRICE', 'LAST',
-    'PRICEMINUSPREVWAPRICE', 'DATAUPDATE', 'CURRENCYID', 'TRADINGSESSION',
-    'STATUS_FILTER', 'LASTCHANGEPRCNT', 'WAPRICE', 'LASTCNGTOLASTWAPRICE',
-    'WAPTOPREVWAPRICEPRCNT', 'MARKETPRICE', 'ISSUECAPITALIZATION',
-    'TRENDISSUECAPITALIZATION', 'BOARDID', 'LOTSIZE', 'HIGH', 'LOW'
-]
+BOARD = 'TQBR'
+INDEX_SECID = 'IMOEX'
+TIMEZONE = 'Europe/Moscow'
 
-STATISTIC_NEED = [
-    'SECID', 'STATUS_FILTER', 'LAST', 'FILTER_SCORE', 'LOTSIZE'
-]
-TYPE_DATA_IMOEX = ['securities', 'marketdata']
-SHARE_GROUPS = ['TQBR']
+# История для обучения и бэктеста (дней календаря).
+HISTORY_DAYS = env_int('HISTORY_DAYS', 1100)
+HOUR_HISTORY_DAYS = env_int('HOUR_HISTORY_DAYS', 800)
 
-WEIGHTS_PARAM = [
-    'WPTPWP', 'LCP', 'PMPWP_WP', 'LCTLWP_WP', 'LCPRCNT', 'LMP',
-    'TIC_IC'
-]
-STOP_TRADING = 'торги приостановлены'
-RUN_TRADING = 'торги идут'
-# URL для получения данных Мосбиржи.
-IMOEX_URL = (
-    'http://iss.moex.com/iss/engines/stock/markets/shares/'
-    'securities.json?iss.json=extended&iss.meta=off'
-)
-RSS_NEWS_URL = (
-    'https://aif.ru/rss/politics.php'
-)
-GET_FILTER_DATA_COMMAND = 'SELECT * FROM filter_data WHERE "FILTER_SCORE" > 60;'
-GET_STATISTIC_COMMAND = (
-    'SELECT '
-    'CAST(ROUND(CAST((AVG(statistic_prcnt)) AS numeric), 2) AS real) AS profitable_deals, '
-    'CAST(ROUND(CAST((100 - AVG(neutral_prcnt) - AVG(statistic_prcnt)) AS numeric), 2) AS real) AS losing_deals, '
-    'CAST(ROUND(CAST((100 * AVG(potential_profitability) / AVG(count_price_after)) AS numeric), 2) AS real) AS result_trading '
-    'FROM all_statistic;'
-)
+# Фильтр ликвидности: медианный оборот за 20 дней, руб.
+MIN_TURNOVER = env_float('MIN_TURNOVER', 100_000_000)
+MIN_PRICE = env_float('MIN_PRICE', 1.0)
 
-# Итерация работы.
-SET_ITERATION = 10
-TIME_UPDATE = 750
-START_VALUE = 0
+# Горизонт удержания позиции (торговых дней) и выходы.
+HOLD_DAYS = env_int('HOLD_DAYS', 2)
+STOP_ATR = env_float('STOP_ATR', 1.5)
+TAKE_ATR = env_float('TAKE_ATR', 2.0)
 
-# Баллы по параметрам алгоритма.
-WPTPWP_POINTS = 5
-LCP_POINTS = 5
-PMPWP_WP_POINTS = 8
-LCTLWP_WP_POINTS = 5
-LCPRCNT_POINTS = 10
-LMP_POINTS = 10
-TIC_IC_POINTS = 7
+# Издержки на одну сторону сделки: комиссия брокера + биржи и проскальзывание.
+# Комиссия ALOR (тариф «Первый», оборот до 500 тыс. ₽/день) + биржевой сбор, на сторону сделки.
+BROKER_COMMISSION = env_float('BROKER_COMMISSION', 0.0005)
+EXCHANGE_FEE = env_float('EXCHANGE_FEE', 0.0001)
+COMMISSION = BROKER_COMMISSION + EXCHANGE_FEE
+SLIPPAGE = env_float('SLIPPAGE', 0.0003)
 
-# Коэффициенты для работы алгоритма и статистики.
-# Комиссия на оборот.
-COMISSION_COEFF = 0.08 / 100
-INCOME_COEFF = 0.2 / 100
-DELTA_COEFF = 0.15
-BUY_COEFF = 0
-MAX_SCORE = (
-    abs(WPTPWP_POINTS) + abs(LCP_POINTS) +
-    abs(PMPWP_WP_POINTS) +
-    abs(LCTLWP_WP_POINTS) + abs(LCPRCNT_POINTS) +
-    abs(LMP_POINTS) + abs(TIC_IC_POINTS)
-)
-# Абстрактное увеличение результата для выборки
-ABSTRACT_COEFF = 1
-# Границы допуска.
-BORDERS_SCORE = 50
+# Отбор сигналов.
+MAX_SIGNALS = env_int('MAX_SIGNALS', 4)
+MAX_PER_SECTOR = env_int('MAX_PER_SECTOR', 1)
+MIN_PROBABILITY = env_float('MIN_PROBABILITY', 0.55)
+MIN_EDGE = env_float('MIN_EDGE', 0.003)  # ожидаемая доходность после издержек
 
-SIZE_F_MAX_SCORE_RESULT = 10
+# Модель (walk-forward логистическая регрессия).
+TRAIN_WINDOW = env_int('TRAIN_WINDOW', 500)  # торговых дней в обучении
+RETRAIN_EVERY = env_int('RETRAIN_EVERY', 20)
+L2_REG = env_float('L2_REG', 1.0)
 
-STATUS_UP = 'вероятность роста'
-STATUS_DOWN = 'вероятность падения'
-STATUS_MEDIUM = 'среднее значение'
+# Режим рынка: не покупать, если IMOEX ниже SMA и падает.
+REGIME_FILTER = env_bool('REGIME_FILTER', True)
+REGIME_SMA = env_int('REGIME_SMA', 50)
 
-db_connector = getenv('db_connector')
-db_login = getenv('db_login')
-db_password = getenv('db_password')
-db_port = getenv('db_port')
-db_name = getenv('db_name')
-DB_URL = (
-    f'{db_connector}://{db_login}:{db_password}'
-    f'@localhost:{db_port}/{db_name}'
-)
+# ИИ (AI_Manager): финальная проверка кандидатов.
+AI_ENABLED = env_bool('AI_ENABLED', True)
+AI_URL = getenv('AI_URL') or 'http://127.0.0.1:8000'
+AI_PASSWORD = getenv('AI_PASSWORD') or ''
+AI_MODEL = getenv('AI_MODEL') or 'qwen36-35b-a3b'
+AI_TIMEOUT = env_float('AI_TIMEOUT', 900)
+AI_MIN_CONFIDENCE = env_int('AI_MIN_CONFIDENCE', 40)
+AI_PROJECT = 'iss_filter_algorithm'
 
-MIN = [-25, 10]
-MAX = [5, 15]
-MED = [-5, 5]
+# Расписание (время МСК, часы.минуты как float: 18.45 = 18:45).
+SIGNAL_TIME = env_float('SIGNAL_TIME', 6.30)
+LOOP_SLEEP = env_int('LOOP_SLEEP', 60)
 
-NULL_DATA_ERROR = 'null_data'
-SPLYT_SYMB = '-'
-
-TELEGRAM_TOKEN = getenv('TLG_NOTICE_TOKEN')
-TELEGRAM_CHAT_ID = getenv('TLG_NOTICE_CHAT_ID')
-TELEGRAM_URL = (
-    'https://api.telegram.org/bot'
-    f'{TELEGRAM_TOKEN}/sendMessage?chat_id='
-    f'{TELEGRAM_CHAT_ID}&text='
-)
-
-END_INTERATION_MESSAGE = 'Итерация выполнена успешно.'
-ERROR_MESSAGE = 'Получена ошибка - '
-EMPTY_STATISTIC_MESSAGE = 'Статистика не собрана.'
-DAILY_EXP_MOV_MESSAGE = 'Дневной сбор "LASTWAPRICE" произведен.'
-START_MESSAGE = '---Project: iss_filter_algorythm---\n'
-RESTART_MESSAGE = 'Перезагрузка сервиса.'
-FIRST_MESSAGE = 'Сервис стартовал.'
-
-SIZE_STAT_BASE = 79
+# Telegram-уведомления (необязательно).
+TELEGRAM_TOKEN = getenv('TLG_NOTICE_TOKEN') or ''
+TELEGRAM_CHAT_ID = getenv('TLG_NOTICE_CHAT_ID') or ''
+START_MESSAGE = '---Project: iss_filter_algorithm---\n'
