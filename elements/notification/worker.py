@@ -36,9 +36,12 @@ class TelegramNotification:
     @classmethod
     def send_message(cls, text: str):
         """ Уведомление в Telegram; без токена или получателей — только в лог."""
-        recipients = cls.chat_ids() if TELEGRAM_TOKEN else []
+        if not TELEGRAM_TOKEN:
+            logger.info(f'(нет TLG_NOTICE_TOKEN) {text}')
+            return
+        recipients = cls.chat_ids()
         if not recipients:
-            logger.info(f'(Telegram не настроен) {text}')
+            logger.info(f'(нет подписчиков — нажмите /start в Telegram-боте) {text}')
             return
         for chat_id in recipients:
             try:

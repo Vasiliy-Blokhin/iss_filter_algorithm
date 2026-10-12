@@ -120,6 +120,8 @@ def trade_outcomes(
 
 def build_dataset(candles: pd.DataFrame, with_outcomes: bool = True, **trade_params) -> pd.DataFrame:
     """ Панель признаков по всем бумагам + признаки индекса + кросс-секция."""
+    # Сессии выходного дня (с 2025 г.) тонкие — работаем только с будними свечами.
+    candles = candles[candles['DATE'].dt.weekday < 5]
     index = candles[candles['SECID'] == INDEX_SECID].set_index('DATE')['CLOSE'].sort_index()
     index_features = pd.DataFrame({
         'idx_r1': index.pct_change(1),

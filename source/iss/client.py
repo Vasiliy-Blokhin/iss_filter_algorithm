@@ -105,7 +105,7 @@ class ISSClient:
             f'engines/stock/markets/shares/boards/{BOARD}/securities.json',
             {
                 'iss.only': 'securities,marketdata',
-                'securities.columns': 'SECID,SHORTNAME,LOTSIZE,MINSTEP,PREVPRICE,STATUS',
+                'securities.columns': 'SECID,SHORTNAME,LOTSIZE,MINSTEP,PREVPRICE,STATUS,INSTRID',
                 'marketdata.columns': (
                     'SECID,LAST,OPEN,HIGH,LOW,BID,OFFER,VALTODAY,'
                     'UPDATETIME,TRADINGSTATUS,TRADINGSESSION'
