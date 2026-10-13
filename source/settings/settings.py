@@ -104,6 +104,7 @@ AI_URL = getenv('AI_URL') or 'http://127.0.0.1:8000'
 AI_PASSWORD = getenv('AI_PASSWORD') or ''
 AI_MODEL = getenv('AI_MODEL') or 'qwen36-35b-a3b'
 AI_TIMEOUT = env_float('AI_TIMEOUT', 900)
+AI_RETRIES = env_int('AI_RETRIES', 3)
 AI_MIN_CONFIDENCE = env_int('AI_MIN_CONFIDENCE', 40)
 AI_PROJECT = 'iss_filter_algorithm'
 
