@@ -93,6 +93,34 @@ class Signal(Base):
     AI_CONFIDENCE: Mapped[Optional[int]]
     AI_REASON: Mapped[Optional[str]]
     STATUS: Mapped[str] = mapped_column(default='new')  # new / approved / rejected / used / expired
+    STRATEGY: Mapped[Optional[str]]  # стратегия(и), давшие сигнал: 'squeeze' или 'squeeze+momentum'
+    WEIGHT: Mapped[Optional[float]]  # доля капитала на позицию (с учётом распределения по стратегиям)
+
+
+class StrategyStat(Base):
+    """ Теневая статистика стратегий: результат сделок, закрытых за день/неделю/месяц."""
+    __tablename__ = 'strategy_stats'
+    __table_args__ = (UniqueConstraint('DATE', 'STRATEGY', 'PERIOD'),)
+
+    id: Mapped[intpk]
+    DATE: Mapped[date] = mapped_column(index=True)
+    STRATEGY: Mapped[str]
+    PERIOD: Mapped[str]  # day / week / month
+    RETURN: Mapped[float]  # вклад в капитал, доля
+    TRADES: Mapped[int]
+    WIN_RATE: Mapped[float]
+    AVG_TRADE: Mapped[float]
+
+
+class StrategySelection(Base):
+    """ Стратегия, выбранная для работы на следующий день, и причина выбора."""
+    __tablename__ = 'strategy_selection'
+
+    DATE: Mapped[date] = mapped_column(primary_key=True)
+    STRATEGY: Mapped[Optional[str]]  # пусто — торговля приостановлена; diversify — несколько
+    REASON: Mapped[str]
+    ALLOCATION: Mapped[Optional[str]]  # JSON {стратегия: доля капитала}
+    CREATED_AT: Mapped[datetime]
 
 
 class BacktestRun(Base):

@@ -27,6 +27,17 @@ class SQLmain:
     @staticmethod
     def create_all_tables():
         Base.metadata.create_all(bind=main_engine)
+        # Новые столбцы в уже существующих таблицах (create_all их не добавляет).
+        inspector = sa.inspect(main_engine)
+        with main_engine.begin() as connection:
+            for table in Base.metadata.sorted_tables:
+                existing = {column['name'] for column in inspector.get_columns(table.name)}
+                for column in table.columns:
+                    if column.name not in existing:
+                        column_type = column.type.compile(dialect=main_engine.dialect)
+                        connection.execute(sa.text(
+                            f'ALTER TABLE {table.name} ADD COLUMN "{column.name}" {column_type}'
+                        ))
 
     @staticmethod
     def upsert(table, rows: list[dict], keys: list[str]):

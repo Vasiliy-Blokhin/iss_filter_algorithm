@@ -4,6 +4,10 @@ model          — логистическая регрессия по призн
                  только на сделках, закрытых до даты прогноза (без заглядывания вперёд).
 mean_reversion — бенчмарк: откат (RSI(2) < 10) в восходящем тренде.
 momentum       — бенчмарк: сильный 5-дневный рост на повышенном обороте у максимумов.
+breakout       — пробой 20-дневного максимума на объёме с закрытием у хая дня.
+trend_pullback — откат 2-3 дня внутри сильного тренда (выше SMA50, рост за 20 дней).
+squeeze        — сжатие волатильности (ATR ниже среднего) и закрытие у хая: ждём расширения.
+capitulation   — отскок после паники: падение >3% на двойном обороте с выкупом от минимума.
 """
 import numpy as np
 import pandas as pd
@@ -145,6 +149,51 @@ def score_momentum(panel: pd.DataFrame) -> pd.DataFrame:
     return scored
 
 
+def rule_scored(panel: pd.DataFrame, score: pd.Series, candidate: pd.Series) -> pd.DataFrame:
+    scored = panel.copy()
+    scored['SCORE'] = score
+    scored['PROBABILITY'] = np.nan
+    scored['EXPECTED_RETURN'] = np.nan
+    scored['CANDIDATE'] = (tradable(scored) & candidate).fillna(False)
+    return scored
+
+
+def score_breakout(panel: pd.DataFrame) -> pd.DataFrame:
+    return rule_scored(
+        panel,
+        score=panel['vol_ratio'],
+        candidate=regime_ok(panel)
+        & (panel['dist_high20'] >= -0.001) & (panel['vol_ratio'] > 1.3) & (panel['clv'] > 0.7),
+    )
+
+
+def score_trend_pullback(panel: pd.DataFrame) -> pd.DataFrame:
+    return rule_scored(
+        panel,
+        score=panel['r20'] - panel['r3'],
+        candidate=(panel['dist_sma50'] > 0.03) & (panel['r20'] > 0.05)
+        & (panel['r3'] < -0.02) & (panel['rsi2'] < 25),
+    )
+
+
+def score_squeeze(panel: pd.DataFrame) -> pd.DataFrame:
+    return rule_scored(
+        panel,
+        score=-panel['atr_ratio'],
+        candidate=(panel['atr_ratio'] < 0.8) & (panel['range_pct'] < 0.7 * panel['atr_pct'])
+        & (panel['clv'] > 0.6) & (panel['dist_sma20'] > 0),
+    )
+
+
+def score_capitulation(panel: pd.DataFrame) -> pd.DataFrame:
+    return rule_scored(
+        panel,
+        score=panel['vol_ratio'] * -panel['r1'],
+        candidate=(panel['r1'] < -0.03) & (panel['vol_ratio'] > 2)
+        & (panel['clv'] > 0.5) & (panel['dist_sma200'] > -0.2),
+    )
+
+
 def walk_forward_scores(panel: pd.DataFrame, start: pd.Timestamp | None = None) -> pd.DataFrame:
     """ Прогнозы модели для каждого дня с переобучением раз в RETRAIN_EVERY дней."""
     dates = np.sort(panel['DATE'].unique())
@@ -184,7 +233,23 @@ def select(scored_day: pd.DataFrame, sectors: dict, limit: int = MAX_SIGNALS) ->
     return candidates.loc[chosen]
 
 
+# Правиловые стратегии; 'model' считается отдельно (walk_forward_scores).
 STRATEGIES = {
     'mean_reversion': score_mean_reversion,
     'momentum': score_momentum,
+    'breakout': score_breakout,
+    'trend_pullback': score_trend_pullback,
+    'squeeze': score_squeeze,
+    'capitulation': score_capitulation,
+}
+ALL_STRATEGIES = ['model', *STRATEGIES]
+
+STRATEGY_TITLES = {
+    'model': 'Модель (логистическая регрессия)',
+    'mean_reversion': 'Откат RSI(2) в тренде',
+    'momentum': 'Импульс 5 дней',
+    'breakout': 'Пробой 20-дневного максимума',
+    'trend_pullback': 'Откат в сильном тренде',
+    'squeeze': 'Сжатие волатильности',
+    'capitulation': 'Отскок после паники',
 }

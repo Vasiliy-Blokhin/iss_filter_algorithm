@@ -83,6 +83,17 @@ TRAIN_WINDOW = env_int('TRAIN_WINDOW', 500)  # торговых дней в об
 RETRAIN_EVERY = env_int('RETRAIN_EVERY', 20)
 L2_REG = env_float('L2_REG', 1.0)
 
+# Распределение капитала между стратегиями:
+#   diversify — доли пропорционально месячному результату, стратегии с месяцем <= 0 исключаются;
+#   best      — одна лучшая стратегия (неделя -> месяц -> день).
+ALLOCATION_MODE = (getenv('ALLOCATION_MODE') or 'diversify').lower()
+
+# Выбор стратегии по теневой статистике: неделя -> месяц -> день.
+# Результаты, отличающиеся меньше чем на SELECT_TIE (доля капитала), считаются равными.
+SELECT_TIE = env_float('SELECT_TIE', 0.005)
+# Не торговать, если у лучшей стратегии и неделя, и месяц не в плюсе.
+REQUIRE_POSITIVE = env_bool('REQUIRE_POSITIVE', True)
+
 # Режим рынка: не покупать, если IMOEX ниже SMA и падает.
 REGIME_FILTER = env_bool('REGIME_FILTER', True)
 REGIME_SMA = env_int('REGIME_SMA', 50)

@@ -54,6 +54,8 @@ def security_features(frame: pd.DataFrame) -> pd.DataFrame:
     ).max(axis=1)
     data['ATR'] = true_range.ewm(alpha=1 / 14, adjust=False).mean()
     data['atr_pct'] = data['ATR'] / close
+    # Сжатие волатильности: текущий ATR относительно среднего за 60 дней (не входит в FEATURES модели).
+    data['atr_ratio'] = data['ATR'] / data['ATR'].rolling(60, min_periods=30).mean()
     data['range_pct'] = (high - low) / close
     data['clv'] = ((close - low) / (high - low).replace(0, np.nan)).fillna(0.5)
     data['gap'] = data['OPEN'] / prev_close - 1
