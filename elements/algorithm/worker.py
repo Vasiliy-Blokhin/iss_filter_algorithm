@@ -9,19 +9,22 @@ import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from elements.ai.worker import AIReviewer, fetch_news
+from elements.reverse.news import headlines, recent_since
 from elements.features.worker import FEATURES, build_dataset
 from elements.features.intraday import dividend_features
 from elements.selector.worker import StrategySelector
+from elements.selftune.params import apply_active_strategy_params
 from elements.strategy.worker import STRATEGIES, score_model, select, train_model
 from source.settings.settings import (
     handler,
     AI_ENABLED,
     AI_MIN_CONFIDENCE,
     HOLD_DAYS,
+    REVERSE_ENABLED,
+    REVERSE_REVIEW,
     STOP_ATR,
     TAKE_ATR,
     TIMEZONE,
-    MAX_SIGNALS,
 )
 from source.sql.main import SQLmain, main_engine
 import source.sql.tables as tables
@@ -53,6 +56,8 @@ class Algorithm(SQLmain):
 
     @classmethod
     def generate_signals(cls, use_ai: bool = AI_ENABLED) -> list[dict]:
+        # Действующие пороги стратегий — из БД (их обновляет самокоррекция).
+        apply_active_strategy_params()
         candles = cls.complete_candles()
         panel = cls.build_panel(candles)
         last_date = panel['DATE'].max()
@@ -60,13 +65,14 @@ class Algorithm(SQLmain):
         securities = cls.securities().set_index('SECID')
         sectors = securities['SECTOR'].to_dict()
 
-        # Доли капитала по стратегиям из теневой статистики (diversify или best).
+        # Доли капитала по стратегиям (adaptive, equal, diversify или best — ALLOCATION_MODE).
         allocation, stats = StrategySelector.select_strategy(panel)
+        unit = StrategySelector.position_unit()
         rows = panel[panel['DATE'] == last_date]
         merged: dict[str, dict] = {}
         for strategy, share in allocation.items():
             for _, row in cls.strategy_picks(strategy, rows, panel, stats, sectors).iterrows():
-                weight = share / (MAX_SIGNALS * HOLD_DAYS)
+                weight = share * unit
                 current = merged.get(row['SECID'])
                 if current:
                     # Бумагу выбрали несколько стратегий — доли складываются.
@@ -74,6 +80,8 @@ class Algorithm(SQLmain):
                     current['STRATEGY'] += f'+{strategy}'
                     continue
                 merged[row['SECID']] = cls.make_signal(row, securities, sectors, last_date, strategy, weight)
+        if REVERSE_ENABLED:
+            cls.add_reverse(panel, merged, securities, sectors, last_date)
         logger.info(f'Сигналов на {last_date.date()}: {len(merged)} ({list(merged)})')
 
         reviewer = AIReviewer() if use_ai and merged else None
@@ -83,12 +91,42 @@ class Algorithm(SQLmain):
 
         signals = []
         for signal in merged.values():
-            if reviewer:
+            if reviewer and (REVERSE_REVIEW or signal['STRATEGY'] != 'reverse'):
                 signal.update(cls.ai_review(reviewer, signal, candles))
             signals.append(signal)
 
         cls.save_signals(signals, last_date.date())
         return signals
+
+    @classmethod
+    def add_reverse(cls, panel, merged, securities, sectors, last_date):
+        """ Сигналы реверсивного алгоритма (теневые, с весом 0, в сигналы не попадают)."""
+        from elements.notification.worker import TelegramNotification as tlg
+        from elements.reverse.worker import ReverseAlgorithm
+        try:
+            picks, result = ReverseAlgorithm.signals(panel)
+        except Exception as error:
+            logger.exception(f'Реверсивный алгоритм: {error}')
+            return
+        logger.info(result['summary'])
+        notable = '\n'.join(f'{date:%d.%m} {kind}: {text}' for date, kind, text in result['notable'][-8:])
+        tlg.send_message(result['summary'] + (f'\n{notable}' if notable else ''))
+        for pick in picks:
+            if pick['WEIGHT'] <= 0:
+                continue
+            row = pick['ROW']
+            current = merged.get(row['SECID'])
+            if current:
+                current['WEIGHT'] += pick['WEIGHT']
+                current['STRATEGY'] += '+reverse'
+                current['LOGIC'] = pick['LOGIC']
+                continue
+            row = row.copy()
+            row['PROBABILITY'] = 0.5
+            row['EXPECTED_RETURN'] = pick['SCORE']
+            signal = cls.make_signal(row, securities, sectors, last_date, 'reverse', pick['WEIGHT'])
+            signal['LOGIC'] = pick['LOGIC']
+            merged[row['SECID']] = signal
 
     @staticmethod
     def strategy_picks(strategy, rows, panel, stats, sectors) -> pd.DataFrame:
@@ -144,7 +182,8 @@ class Algorithm(SQLmain):
              round((row.VALUE or 0) / 1e6, 1)]
             for row in history.itertuples()
         ]
-        news = fetch_news([signal['SECID'], signal.get('SHORTNAME') or ''])
+        # Оценённые локальной моделью новости о бумаге и рынке; без них — заголовки RSS.
+        news = headlines(signal['SECID'], recent_since()) or fetch_news([signal['SECID'], signal.get('SHORTNAME') or ''])
         try:
             verdict = reviewer.review(signal, last_candles, news)
         except Exception as error:
@@ -170,5 +209,8 @@ class Algorithm(SQLmain):
                 .values(STATUS='expired')
             )
             s.commit()
-        rows = [{**signal, 'FEATURES': json.dumps(signal['FEATURES'])} for signal in signals]
+        rows = [
+            {**{k: v for k, v in signal.items() if k != 'LOGIC'}, 'FEATURES': json.dumps(signal['FEATURES'])}
+            for signal in signals
+        ]
         cls.upsert(tables.Signal, rows, ['SECID', 'SIGNAL_DATE'])

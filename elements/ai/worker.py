@@ -76,7 +76,7 @@ class AIReviewer:
             'X-Job-Timeout': str(int(AI_TIMEOUT)),
         }
 
-    def chat(self, messages: list[dict], max_tokens: int = 400) -> str:
+    def chat(self, messages: list[dict], max_tokens: int = 400, extra: dict | None = None) -> str:
         # AI_Manager обслуживает несколько проектов и может перезапускать модель —
         # обрыв соединения повторяем.
         for attempt in range(1, AI_RETRIES + 1):
@@ -90,6 +90,7 @@ class AIReviewer:
                         'temperature': 0.2,
                         'max_tokens': max_tokens,
                         'response_format': {'type': 'json_object'},
+                        **(extra or {}),
                     },
                     timeout=AI_TIMEOUT,
                 )
@@ -117,7 +118,8 @@ class AIReviewer:
         prompt = (
             f'Акция: {candidate["SECID"]} ({candidate.get("SHORTNAME")}), '
             f'сектор: {candidate.get("SECTOR")}.\n'
-            f'Стратегия, отобравшая акцию: {strategy_logic(candidate.get("STRATEGY"))}.\n'
+            f'Стратегия, отобравшая акцию: '
+            f'{candidate.get("LOGIC") or strategy_logic(candidate.get("STRATEGY"))}.\n'
             f'Оценка модели: вероятность прибыли {candidate["PROBABILITY"]:.0%}, '
             f'ожидаемая доходность {candidate["EXPECTED_RETURN"]:.2%}.\n'
             f'Стоп {candidate["STOP_PRICE"]:.4g}, тейк {candidate["TAKE_PRICE"]:.4g}, '
@@ -125,7 +127,7 @@ class AIReviewer:
             f'Признаки: {json.dumps(candidate["FEATURES"], ensure_ascii=False)}\n'
             f'Последние дневные свечи (дата, O, H, L, C, оборот млн руб): '
             f'{json.dumps(last_candles, ensure_ascii=False)}\n'
-            'Новости (могут быть нерелевантны): '
+            'Новости (с оценкой тональности и важности локальной моделью; могут быть нерелевантны): '
             + ('; '.join(news[:15]) if news else 'нет данных')
         )
         content = self.chat([

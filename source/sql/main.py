@@ -132,6 +132,14 @@ class SQLmain:
         return {secid: last for secid, last in rows}
 
     @staticmethod
+    def first_candle_dates() -> dict:
+        with Session(bind=main_engine) as s:
+            rows = s.execute(
+                sa.select(Candle.SECID, sa.func.min(Candle.DATE)).group_by(Candle.SECID)
+            ).all()
+        return {secid: first for secid, first in rows}
+
+    @staticmethod
     def securities() -> pd.DataFrame:
         with main_engine.connect() as connection:
             return pd.read_sql(sa.select(Security.__table__), connection)

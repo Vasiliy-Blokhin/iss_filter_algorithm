@@ -74,10 +74,18 @@ class DataLoader(SQLmain):
         first_date = date.today() - timedelta(days=HISTORY_DAYS)
         updated = 0
 
+        first_dates = self.first_candle_dates()
         for secid in [INDEX_SECID, *secids]:
             last = last_dates.get(secid)
             start = max(first_date, last - timedelta(days=3)) if last else first_date
+            # Глубина истории увеличена (HISTORY_DAYS) — догружаем недостающее начало.
+            first = first_dates.get(secid)
+            backfill = first is not None and first > first_date + timedelta(days=7)
             try:
+                if backfill:
+                    older = self.client.candles(secid, first_date, first, index=secid == INDEX_SECID)
+                    if not older.empty:
+                        self.save_candles(secid, older)
                 if secid == INDEX_SECID:
                     frame = self.client.index_candles(start)
                 else:

@@ -12,9 +12,18 @@
 затем день. Если у выбранной и неделя, и месяц не в плюсе, а REQUIRE_POSITIVE включён —
 торговля на следующий день не ведётся.
 
-Режим diversify (по умолчанию): капитал делится между стратегиями с положительным
-месячным результатом пропорционально этому результату. На истории (250 дней) это дало
--1.1% против -4.3% у best при меньшей просадке; см. README.
+Режим diversify: капитал делится между стратегиями с положительным месячным результатом
+пропорционально этому результату.
+
+Режим adaptive (по умолчанию): коррекция по текущей статистике — вес каждой правиловой
+стратегии по её теневым сделкам, закрытым за последние lookback дней (срезать «остывшие»,
+усилить «в форме»), позиция = slot * вес; параметры — в БД (algo_params, вид correction),
+их подбирает самокоррекция по слепому бэктесту (elements/selftune).
+
+Режим equal: капитал поровну между правиловыми стратегиями, без выбора по
+недавним результатам — лидерство стратегий почти не сохраняется. На 2020-2026 это дало
++10.5% (6 лет из 7 в плюсе) против +11.4% у diversify и +6.1% у best, но с меньшими
+колебаниями: за последний год +1.3% против -1.5% и -2.3%; см. README.
 """
 import json
 import logging
@@ -24,6 +33,8 @@ import numpy as np
 import pandas as pd
 
 from elements.backtest.worker import Backtest
+from elements.selftune.params import load_active
+from elements.selftune.simulator import correction_weight, trade_history
 from elements.strategy.worker import STRATEGIES, ALL_STRATEGIES, walk_forward_scores
 from source.settings.settings import (
     handler,
@@ -84,9 +95,9 @@ class StrategySelector(SQLmain):
         return result
 
     @classmethod
-    def compute(cls, panel: pd.DataFrame) -> pd.DataFrame:
+    def compute(cls, panel: pd.DataFrame, trades: dict | None = None) -> pd.DataFrame:
         """ Статистика всех стратегий на последний день с известными исходами сделок."""
-        trades = cls.shadow_trades(panel)
+        trades = trades if trades is not None else cls.shadow_trades(panel)
         dates = np.sort(panel['DATE'].unique())
         as_of = pd.Timestamp(dates[-1])
         rows = []
@@ -121,7 +132,7 @@ class StrategySelector(SQLmain):
         dates = np.sort(panel['DATE'].unique())
         test_dates = pd.Series(dates[-days:])
         result = {}
-        for mode in ('diversify', 'best'):
+        for mode in ('equal', 'diversify', 'best'):
             taken, used = [], []
             for as_of in test_dates:
                 as_of = pd.Timestamp(as_of)
@@ -194,9 +205,45 @@ class StrategySelector(SQLmain):
         ) + (f'; исключены: {excluded}' if excluded else '')
         return shares.to_dict(), reason
 
+    @staticmethod
+    def adaptive(trades: dict, dates: np.ndarray, correction: dict) -> tuple[dict, str]:
+        """ Веса правиловых стратегий по их теневым сделкам, закрытым к последнему дню."""
+        day = len(dates) - 1
+        weights = {}
+        for name in STRATEGIES:
+            own = trades.get(name, pd.DataFrame())
+            if own.empty:
+                exits, returns = np.array([], dtype=int), np.array([])
+            else:
+                exits = np.searchsorted(dates, pd.to_datetime(own['EXIT_DATE']).to_numpy())
+                returns = own['TRADE_RET'].to_numpy(dtype=float)
+            weights[name] = correction_weight(*trade_history(exits, returns), day, correction)
+        allocation = {name: w for name, w in weights.items() if w > 0}
+        reason = 'коррекция по статистике за {lookback} дн.: '.format(**correction) + ', '.join(
+            f'{name} {w:g}' for name, w in weights.items()
+        ) + f'; позиция = {correction["slot"]:.0%} капитала x вес'
+        if not allocation:
+            reason += ' — все стратегии остыли: торговля приостановлена'
+        return allocation, reason
+
+    @staticmethod
+    def position_unit(mode: str = ALLOCATION_MODE) -> float:
+        """ Доля капитала на сделку при доле (весе) стратегии 1."""
+        if mode == 'adaptive':
+            return float(load_active('correction')['slot'])
+        return 1 / (MAX_SIGNALS * HOLD_DAYS)
+
+    @staticmethod
+    def equal() -> tuple[dict, str]:
+        """ Поровну между правиловыми стратегиями (модель без преимущества не торгует)."""
+        share = round(1 / len(STRATEGIES), 4)
+        return {name: share for name in STRATEGIES}, f'равные доли {share:.0%} между {len(STRATEGIES)} стратегиями'
+
     @classmethod
     def allocate(cls, stats: pd.DataFrame, mode: str = ALLOCATION_MODE) -> tuple[dict, str]:
         """ {стратегия: доля капитала} и текстовое объяснение."""
+        if mode == 'equal':
+            return cls.equal()
         if mode == 'best':
             chosen, reason = cls.choose(stats)
             return ({chosen: 1.0} if chosen else {}), reason
@@ -204,12 +251,18 @@ class StrategySelector(SQLmain):
 
     @classmethod
     def select_strategy(cls, panel: pd.DataFrame) -> tuple[dict, pd.DataFrame]:
-        stats = cls.compute(panel)
-        allocation, reason = cls.allocate(stats)
+        if ALLOCATION_MODE == 'adaptive':
+            correction = load_active('correction')
+            trades = cls.shadow_trades(panel, lookback=max(45, int(correction['lookback']) + 10))
+            stats = cls.compute(panel, trades)
+            allocation, reason = cls.adaptive(trades, np.sort(panel['DATE'].unique()), correction)
+        else:
+            stats = cls.compute(panel)
+            allocation, reason = cls.allocate(stats)
         as_of = stats['DATE'].iloc[0]
         label = (
             None if not allocation
-            else next(iter(allocation)) if len(allocation) == 1 else 'diversify'
+            else next(iter(allocation)) if len(allocation) == 1 else ALLOCATION_MODE
         )
         cls.upsert(tables.StrategySelection, [{
             'DATE': as_of, 'STRATEGY': label, 'REASON': reason,

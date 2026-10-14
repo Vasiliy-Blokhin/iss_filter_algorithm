@@ -13,6 +13,7 @@ from source.settings.settings import (
     TAKE_ATR,
     COMMISSION,
     SLIPPAGE,
+    EXIT_AT_OPEN,
 )
 
 
@@ -72,10 +73,13 @@ def trade_outcomes(
     hold: int = HOLD_DAYS,
     stop_atr: float = STOP_ATR,
     take_atr: float = TAKE_ATR,
+    exit_at_open: bool = EXIT_AT_OPEN,
 ) -> pd.DataFrame:
     """ Исход сделки, открытой по сигналу дня t (для меток и бэктеста).
 
-    Консервативно: если в один день задеты и стоп, и тейк — считаем стоп.
+    Выход по времени — по закрытию дня t+hold, а при exit_at_open — по открытию дня t+hold
+    (держим лишнюю ночь вместо последней дневной сессии: в среднем по рынку цена растёт ночью
+    и падает днём). Консервативно: если в один день задеты и стоп, и тейк — считаем стоп.
     """
     opens = frame['OPEN'].to_numpy()
     highs = frame['HIGH'].to_numpy()
@@ -103,6 +107,9 @@ def trade_outcomes(
                 break
             if day > 1 and opens[index] >= take:
                 exit_price, kind, offset = opens[index], 'take', day
+                break
+            if exit_at_open and day == hold and hold > 1:
+                exit_price, kind, offset = opens[index], 'time', day
                 break
             if lows[index] <= stop:
                 exit_price, kind, offset = stop, 'stop', day
