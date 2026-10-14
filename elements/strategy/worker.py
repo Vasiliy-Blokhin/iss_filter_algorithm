@@ -2,8 +2,16 @@
 
 model          — логистическая регрессия по признакам, обучается walk-forward
                  только на сделках, закрытых до даты прогноза (без заглядывания вперёд).
-mean_reversion — бенчмарк: откат (RSI(2) < 10) в восходящем тренде.
+mean_reversion — бенчмарк: откат (RSI(2) < 10) в восходящем тренде с выкупом внутри дня.
 momentum       — бенчмарк: сильный 5-дневный рост на повышенном обороте у максимумов.
+breakout       — пробой 20-дневного максимума на объёме с закрытием у хая дня.
+trend_pullback — глубокий откат за 3 дня внутри сильного тренда (выше SMA50, рост за 20 дней).
+squeeze        — сжатие волатильности (ATR ниже среднего) и закрытие у хая в день роста рынка.
+capitulation   — отскок после паники: падение >4% на повышенном обороте с выкупом от минимума
+                 (только если сам IMOEX за день упал не больше чем на 2%).
+
+Пороги по умолчанию подобраны 13.10.2026 на истории 2020-2024 (см. README); действующие
+пороги хранятся в БД и периодически обновляются самокоррекцией (elements/selftune).
 """
 import numpy as np
 import pandas as pd
@@ -122,27 +130,122 @@ def score_model(panel: pd.DataFrame, model: LogisticModel) -> pd.DataFrame:
     return scored
 
 
-def score_mean_reversion(panel: pd.DataFrame) -> pd.DataFrame:
+# Пороги правиловых стратегий. Значения по умолчанию подобраны 13.10.2026 (см. README);
+# действующие значения хранятся в БД (таблица algo_params) и подставляются
+# через set_active_params() — их обновляет самокоррекция (elements/selftune).
+# Порог <= OFF_LOW (или >= OFF_HIGH для условий «меньше») выключает условие, clv = -1 — тоже.
+OFF_LOW, OFF_HIGH = -9.0, 9.0
+DEFAULT_PARAMS = {
+    'mean_reversion': {'rsi': 10, 'sma200': -0.1, 'r20': 0.0, 'clv': 0.4, 'regime': 1},
+    'momentum': {'vol': 2.5, 'high': -0.005, 'r5cs': 0.0, 'clv': 0.5, 'sma200': 0.0,
+                 'gap': -0.01, 'regime': 0},
+    'breakout': {'high': -0.001, 'vol': 3.0, 'clv': 0.7, 'sma50': 0.05, 'regime': 1},
+    'trend_pullback': {'sma50': 0.03, 'r20': 0.08, 'r3': -0.045, 'rsi': 30, 'clv': -1.0,
+                       'regime': 1},
+    'squeeze': {'atr': 0.8, 'rng': 0.7, 'clv': 0.6, 'sma20': 0.0, 'idx': 0.0, 'regime': 0},
+    'capitulation': {'r1': -0.04, 'vol': 1.3, 'idx': -0.02, 'clv': 0.3, 'sma200': -0.1,
+                     'regime': 1},
+}
+ACTIVE_PARAMS = {name: dict(values) for name, values in DEFAULT_PARAMS.items()}
+
+
+def set_active_params(params: dict) -> dict:
+    """ Действующие пороги: значения из БД поверх значений по умолчанию."""
+    for name, defaults in DEFAULT_PARAMS.items():
+        ACTIVE_PARAMS[name] = {**defaults, **(params or {}).get(name, {})}
+    return ACTIVE_PARAMS
+
+
+def above(series: pd.Series, threshold: float) -> pd.Series:
+    if threshold <= OFF_LOW:
+        return pd.Series(True, index=series.index)
+    return series > threshold
+
+
+def below(series: pd.Series, threshold: float) -> pd.Series:
+    if threshold >= OFF_HIGH:
+        return pd.Series(True, index=series.index)
+    return series < threshold
+
+
+def rule_condition(name: str, panel: pd.DataFrame, p: dict) -> tuple[pd.Series, pd.Series]:
+    """ (условие входа без фильтра ликвидности, приоритет) правиловой стратегии."""
+    idx_r1 = panel['idx_r1'].fillna(0)
+    if name == 'mean_reversion':
+        # Без выкупа внутри дня (clv) и роста за 20 дней «падающие ножи» давали -11.7% за год.
+        condition = (
+            (panel['rsi2'] < p['rsi']) & above(panel['dist_sma200'], p['sma200'])
+            & above(panel['r20'], p['r20']) & above(panel['clv'], p['clv'])
+        )
+        score = -panel['rsi2']
+    elif name == 'momentum':
+        condition = (
+            (panel['vol_ratio'] > p['vol']) & (panel['dist_high20'] > p['high'])
+            & (panel['r5_cs'] > p['r5cs']) & above(panel['clv'], p['clv'])
+            & above(panel['dist_sma200'], p['sma200']) & above(panel['gap'], p['gap'])
+        )
+        score = panel['r5_cs']
+    elif name == 'breakout':
+        condition = (
+            (panel['dist_high20'] >= p['high']) & (panel['vol_ratio'] > p['vol'])
+            & above(panel['clv'], p['clv']) & above(panel['dist_sma50'], p['sma50'])
+        )
+        score = panel['vol_ratio']
+    elif name == 'trend_pullback':
+        # Только глубокий откат после сильного роста: мелкие откаты (-2%) давали -10% за год.
+        condition = (
+            above(panel['dist_sma50'], p['sma50']) & (panel['r20'] > p['r20'])
+            & (panel['r3'] < p['r3']) & (panel['rsi2'] < p['rsi']) & above(panel['clv'], p['clv'])
+        )
+        score = panel['r20'] - panel['r3']
+    elif name == 'squeeze':
+        condition = (
+            (panel['atr_ratio'] < p['atr']) & (panel['range_pct'] < p['rng'] * panel['atr_pct'])
+            & above(panel['clv'], p['clv']) & above(panel['dist_sma20'], p['sma20'])
+            & above(idx_r1, p['idx'])
+        )
+        score = -panel['atr_ratio']
+    elif name == 'capitulation':
+        # Падение самой бумаги, а не обвал всего рынка: в дни падения IMOEX > 2% отскок не работал.
+        condition = (
+            (panel['r1'] < p['r1']) & (panel['vol_ratio'] > p['vol']) & above(idx_r1, p['idx'])
+            & above(panel['clv'], p['clv']) & above(panel['dist_sma200'], p['sma200'])
+        )
+        score = panel['vol_ratio'] * -panel['r1']
+    else:
+        raise KeyError(name)
+    if p.get('regime'):
+        condition = condition & regime_ok(panel)
+    if not p.get('enabled', 1):
+        # Самокоррекция выключила стратегию: на окне обучения она убыточна при любых порогах.
+        condition = pd.Series(False, index=panel.index)
+    return condition, score
+
+
+def rule_scored(panel: pd.DataFrame, score: pd.Series, candidate: pd.Series) -> pd.DataFrame:
     scored = panel.copy()
-    scored['SCORE'] = -scored['rsi2']
+    scored['SCORE'] = score
     scored['PROBABILITY'] = np.nan
     scored['EXPECTED_RETURN'] = np.nan
-    scored['CANDIDATE'] = (
-        tradable(scored) & (scored['rsi2'] < 10) & (scored['dist_sma200'] > 0)
-    )
+    scored['CANDIDATE'] = (tradable(scored) & candidate).fillna(False)
     return scored
 
 
-def score_momentum(panel: pd.DataFrame) -> pd.DataFrame:
-    scored = panel.copy()
-    scored['SCORE'] = scored['r5_cs']
-    scored['PROBABILITY'] = np.nan
-    scored['EXPECTED_RETURN'] = np.nan
-    scored['CANDIDATE'] = (
-        tradable(scored) & regime_ok(scored)
-        & (scored['vol_ratio'] > 1.5) & (scored['dist_high20'] > -0.01) & (scored['r5_cs'] > 0)
-    )
-    return scored
+def rule_scorer(name: str):
+    """ Функция оценки стратегии с действующими (или явно переданными) порогами."""
+    def scorer(panel: pd.DataFrame, params: dict | None = None) -> pd.DataFrame:
+        condition, score = rule_condition(name, panel, params or ACTIVE_PARAMS[name])
+        return rule_scored(panel, score, condition)
+    scorer.__name__ = f'score_{name}'
+    return scorer
+
+
+score_mean_reversion = rule_scorer('mean_reversion')
+score_momentum = rule_scorer('momentum')
+score_breakout = rule_scorer('breakout')
+score_trend_pullback = rule_scorer('trend_pullback')
+score_squeeze = rule_scorer('squeeze')
+score_capitulation = rule_scorer('capitulation')
 
 
 def walk_forward_scores(panel: pd.DataFrame, start: pd.Timestamp | None = None) -> pd.DataFrame:
@@ -184,7 +287,36 @@ def select(scored_day: pd.DataFrame, sectors: dict, limit: int = MAX_SIGNALS) ->
     return candidates.loc[chosen]
 
 
+# Правиловые стратегии; 'model' считается отдельно (walk_forward_scores).
 STRATEGIES = {
     'mean_reversion': score_mean_reversion,
     'momentum': score_momentum,
+    'breakout': score_breakout,
+    'trend_pullback': score_trend_pullback,
+    'squeeze': score_squeeze,
+    'capitulation': score_capitulation,
+}
+ALL_STRATEGIES = ['model', *STRATEGIES]
+
+# Для ИИ-проверки: что именно стратегия считает поводом для покупки.
+STRATEGY_LOGIC = {
+    'model': 'статистическая модель по признакам цены и оборота',
+    'mean_reversion': 'покупка отката (RSI(2) < 10) в долгосрочном росте — низкий RSI ожидаем',
+    'momentum': 'покупка сильного роста на обороте у 20-дневных максимумов — высокий RSI ожидаем',
+    'breakout': 'покупка пробоя 20-дневного максимума на объёме — цена у максимумов ожидаема',
+    'trend_pullback': 'покупка короткого отката внутри сильного тренда',
+    'squeeze': 'покупка после сжатия волатильности с закрытием у хая дня',
+    'capitulation': 'покупка отскока после панического падения на большом обороте',
+    'reverse': 'реверсивный алгоритм: правила, выведенные из опыта прошлых сделок и новостного фона',
+}
+
+STRATEGY_TITLES = {
+    'model': 'Модель (логистическая регрессия)',
+    'mean_reversion': 'Откат RSI(2) в тренде',
+    'momentum': 'Импульс 5 дней',
+    'breakout': 'Пробой 20-дневного максимума',
+    'trend_pullback': 'Откат в сильном тренде',
+    'squeeze': 'Сжатие волатильности',
+    'capitulation': 'Отскок после паники',
+    'reverse': 'Реверсивный (опыт + новости)',
 }

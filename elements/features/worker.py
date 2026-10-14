@@ -13,6 +13,7 @@ from source.settings.settings import (
     TAKE_ATR,
     COMMISSION,
     SLIPPAGE,
+    EXIT_AT_OPEN,
 )
 
 
@@ -54,6 +55,8 @@ def security_features(frame: pd.DataFrame) -> pd.DataFrame:
     ).max(axis=1)
     data['ATR'] = true_range.ewm(alpha=1 / 14, adjust=False).mean()
     data['atr_pct'] = data['ATR'] / close
+    # Сжатие волатильности: текущий ATR относительно среднего за 60 дней (не входит в FEATURES модели).
+    data['atr_ratio'] = data['ATR'] / data['ATR'].rolling(60, min_periods=30).mean()
     data['range_pct'] = (high - low) / close
     data['clv'] = ((close - low) / (high - low).replace(0, np.nan)).fillna(0.5)
     data['gap'] = data['OPEN'] / prev_close - 1
@@ -70,10 +73,13 @@ def trade_outcomes(
     hold: int = HOLD_DAYS,
     stop_atr: float = STOP_ATR,
     take_atr: float = TAKE_ATR,
+    exit_at_open: bool = EXIT_AT_OPEN,
 ) -> pd.DataFrame:
     """ Исход сделки, открытой по сигналу дня t (для меток и бэктеста).
 
-    Консервативно: если в один день задеты и стоп, и тейк — считаем стоп.
+    Выход по времени — по закрытию дня t+hold, а при exit_at_open — по открытию дня t+hold
+    (держим лишнюю ночь вместо последней дневной сессии: в среднем по рынку цена растёт ночью
+    и падает днём). Консервативно: если в один день задеты и стоп, и тейк — считаем стоп.
     """
     opens = frame['OPEN'].to_numpy()
     highs = frame['HIGH'].to_numpy()
@@ -102,6 +108,9 @@ def trade_outcomes(
             if day > 1 and opens[index] >= take:
                 exit_price, kind, offset = opens[index], 'take', day
                 break
+            if exit_at_open and day == hold and hold > 1:
+                exit_price, kind, offset = opens[index], 'time', day
+                break
             if lows[index] <= stop:
                 exit_price, kind, offset = stop, 'stop', day
                 break
@@ -120,6 +129,8 @@ def trade_outcomes(
 
 def build_dataset(candles: pd.DataFrame, with_outcomes: bool = True, **trade_params) -> pd.DataFrame:
     """ Панель признаков по всем бумагам + признаки индекса + кросс-секция."""
+    # Сессии выходного дня (с 2025 г.) тонкие — работаем только с будними свечами.
+    candles = candles[candles['DATE'].dt.weekday < 5]
     index = candles[candles['SECID'] == INDEX_SECID].set_index('DATE')['CLOSE'].sort_index()
     index_features = pd.DataFrame({
         'idx_r1': index.pct_change(1),

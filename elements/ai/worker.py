@@ -9,15 +9,18 @@ import logging
 import re
 import xml.etree.ElementTree as ET
 from os import getenv
+from time import sleep
 
 import requests
 
+from elements.strategy.worker import STRATEGY_LOGIC
 from source.settings.settings import (
     handler,
     AI_URL,
     AI_PASSWORD,
     AI_MODEL,
     AI_TIMEOUT,
+    AI_RETRIES,
     AI_PROJECT,
     HOLD_DAYS,
     HTTP_TIMEOUT,
@@ -28,6 +31,12 @@ logger = logging.getLogger(name=__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(handler)
 
+
+def strategy_logic(strategy: str | None) -> str:
+    """ Описание логики стратегии(й) сигнала, например 'squeeze+momentum'."""
+    names = (strategy or 'model').split('+')
+    return '; '.join(STRATEGY_LOGIC.get(name, name) for name in names)
+
 SYSTEM_PROMPT = (
     'Ты — риск-аналитик краткосрочных сделок на Московской бирже. '
     'Статистическая модель уже отобрала акцию для покупки с удержанием '
@@ -35,6 +44,9 @@ SYSTEM_PROMPT = (
     'или по времени). Твоя задача — найти причины НЕ входить: корпоративные события '
     '(отсечка дивидендов в ближайшие дни — цена упадёт на размер дивиденда, SPO, '
     'делистинг, санкции), аномальные свечи, явный негатив в новостях. '
+    'НЕ отклоняй сделку из-за технических показателей (перекупленность, перепроданность, '
+    'RSI, близость к максимумам или минимумам): они — часть логики стратегии, которая '
+    'отобрала акцию, и уже проверены статистикой. '
     'Если явных причин нет — подтверди сделку. Не выдумывай факты, которых нет в данных. '
     'Ответь строго JSON без пояснений вокруг: '
     '{"decision": "buy" или "skip", "confidence": целое 0-100, "reason": "кратко по-русски"}'
@@ -64,21 +76,32 @@ class AIReviewer:
             'X-Job-Timeout': str(int(AI_TIMEOUT)),
         }
 
-    def chat(self, messages: list[dict], max_tokens: int = 400) -> str:
-        response = requests.post(
-            f'{self.url}/v1/chat/completions',
-            headers=self.headers(),
-            json={
-                'model': self.model,
-                'messages': messages,
-                'temperature': 0.2,
-                'max_tokens': max_tokens,
-                'response_format': {'type': 'json_object'},
-            },
-            timeout=AI_TIMEOUT,
-        )
-        response.raise_for_status()
-        return response.json()['choices'][0]['message']['content'] or ''
+    def chat(self, messages: list[dict], max_tokens: int = 400, extra: dict | None = None) -> str:
+        # AI_Manager обслуживает несколько проектов и может перезапускать модель —
+        # обрыв соединения повторяем.
+        for attempt in range(1, AI_RETRIES + 1):
+            try:
+                response = requests.post(
+                    f'{self.url}/v1/chat/completions',
+                    headers=self.headers(),
+                    json={
+                        'model': self.model,
+                        'messages': messages,
+                        'temperature': 0.2,
+                        'max_tokens': max_tokens,
+                        'response_format': {'type': 'json_object'},
+                        **(extra or {}),
+                    },
+                    timeout=AI_TIMEOUT,
+                )
+                response.raise_for_status()
+                return response.json()['choices'][0]['message']['content'] or ''
+            except (requests.ConnectionError, requests.Timeout) as error:
+                if attempt == AI_RETRIES:
+                    raise
+                logger.warning(f'AI_Manager: попытка {attempt} не удалась ({error}), повтор через 60 с')
+                sleep(60)
+        return ''
 
     @staticmethod
     def parse(content: str) -> dict:
@@ -95,6 +118,8 @@ class AIReviewer:
         prompt = (
             f'Акция: {candidate["SECID"]} ({candidate.get("SHORTNAME")}), '
             f'сектор: {candidate.get("SECTOR")}.\n'
+            f'Стратегия, отобравшая акцию: '
+            f'{candidate.get("LOGIC") or strategy_logic(candidate.get("STRATEGY"))}.\n'
             f'Оценка модели: вероятность прибыли {candidate["PROBABILITY"]:.0%}, '
             f'ожидаемая доходность {candidate["EXPECTED_RETURN"]:.2%}.\n'
             f'Стоп {candidate["STOP_PRICE"]:.4g}, тейк {candidate["TAKE_PRICE"]:.4g}, '
@@ -102,7 +127,7 @@ class AIReviewer:
             f'Признаки: {json.dumps(candidate["FEATURES"], ensure_ascii=False)}\n'
             f'Последние дневные свечи (дата, O, H, L, C, оборот млн руб): '
             f'{json.dumps(last_candles, ensure_ascii=False)}\n'
-            'Новости (могут быть нерелевантны): '
+            'Новости (с оценкой тональности и важности локальной моделью; могут быть нерелевантны): '
             + ('; '.join(news[:15]) if news else 'нет данных')
         )
         content = self.chat([

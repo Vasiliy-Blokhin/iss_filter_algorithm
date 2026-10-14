@@ -53,7 +53,8 @@ INDEX_SECID = 'IMOEX'
 TIMEZONE = 'Europe/Moscow'
 
 # История для обучения и бэктеста (дней календаря).
-HISTORY_DAYS = env_int('HISTORY_DAYS', 1100)
+# ~7 лет: слепому бэктесту самокоррекции нужно несколько лет обучения и проверки.
+HISTORY_DAYS = env_int('HISTORY_DAYS', 2600)
 HOUR_HISTORY_DAYS = env_int('HOUR_HISTORY_DAYS', 800)
 
 # Фильтр ликвидности: медианный оборот за 20 дней, руб.
@@ -62,6 +63,9 @@ MIN_PRICE = env_float('MIN_PRICE', 1.0)
 
 # Горизонт удержания позиции (торговых дней) и выходы.
 HOLD_DAYS = env_int('HOLD_DAYS', 2)
+# Выход по времени по открытию последнего дня (исполнитель: TIME_EXIT сразу после 10:00),
+# иначе — по закрытию. Должно совпадать с настройками ALOR_TICKETS_BOT.
+EXIT_AT_OPEN = env_bool('EXIT_AT_OPEN', False)
 STOP_ATR = env_float('STOP_ATR', 1.5)
 TAKE_ATR = env_float('TAKE_ATR', 2.0)
 
@@ -83,6 +87,50 @@ TRAIN_WINDOW = env_int('TRAIN_WINDOW', 500)  # торговых дней в об
 RETRAIN_EVERY = env_int('RETRAIN_EVERY', 20)
 L2_REG = env_float('L2_REG', 1.0)
 
+# Распределение капитала между стратегиями:
+#   adaptive  — коррекция по текущей статистике (параметры в БД, подбирает самокоррекция);
+#   equal     — поровну между правиловыми стратегиями;
+#   diversify — доли пропорционально месячному результату, стратегии с месяцем <= 0 исключаются;
+#   best      — одна лучшая стратегия (неделя -> месяц -> день).
+ALLOCATION_MODE = (getenv('ALLOCATION_MODE') or 'adaptive').lower()
+
+# Выбор стратегии по теневой статистике: неделя -> месяц -> день.
+# Результаты, отличающиеся меньше чем на SELECT_TIE (доля капитала), считаются равными.
+SELECT_TIE = env_float('SELECT_TIE', 0.005)
+# Не торговать, если у лучшей стратегии и неделя, и месяц не в плюсе.
+REQUIRE_POSITIVE = env_bool('REQUIRE_POSITIVE', True)
+
+# Как у исполнителя (ALOR_TICKETS_BOT/.env) — для симуляции портфеля самокоррекцией.
+RISK_PER_TRADE = env_float('RISK_PER_TRADE', 0.01)
+MAX_POSITIONS = env_int('MAX_POSITIONS', 16)
+
+# Самокоррекция (elements/selftune): окна работы по МСК «ЧЧ:ММ-ЧЧ:ММ/мин_сек-макс_сек»
+# через «;» (окно может переходить через полночь), начало слепого периода бэктеста,
+# минимальный прирост оценки для принятия кандидата и допуск по каждой половине периода.
+SELFTUNE_WINDOWS = getenv('SELFTUNE_WINDOWS') or '08:00-10:00/600-900;13:00-14:00/600-900;22:00-02:00/120-300'
+SELFTUNE_NIGHT = getenv('SELFTUNE_NIGHT') or '22:00-02:00'  # здесь же проверяются тяжёлые кандидаты (tuner)
+BLIND_START = getenv('BLIND_START') or '2021-01-01'
+SELFTUNE_MARGIN = env_float('SELFTUNE_MARGIN', 0.003)
+SELFTUNE_HALF_TOLERANCE = env_float('SELFTUNE_HALF_TOLERANCE', 0.01)
+SELFTUNE_DD_PENALTY = env_float('SELFTUNE_DD_PENALTY', 0.5)  # оценка = CAGR + штраф * просадка
+TARGET_CAGR = env_float('TARGET_CAGR', 0.20)
+
+# Ротация «акции / короткие облигации / деньги» (elements/rotation): раз в месяц по данным
+# на последний торговый день месяца выбирается актив с лучшим средним ростом за
+# ROTATION_LOOKBACKS торговых дней; если он не лучше денег — деньги. Доля акций не больше
+# ROTATION_EQ_CAP (остаток — в фонде денежного рынка). Сигналы — по индексам, покупаются фонды.
+ROTATION_ENABLED = env_bool('ROTATION_ENABLED', True)
+ROTATION_LOOKBACKS = [int(x) for x in (getenv('ROTATION_LOOKBACKS') or '63,126').split(',')]
+ROTATION_EQ_CAP = env_float('ROTATION_EQ_CAP', 0.7)
+ROTATION_ASSETS = {  # актив: (индекс-сигнал, фонд в TQBR)
+    'EQ': (getenv('ROTATION_EQ_INDEX') or 'MCFTR', getenv('ROTATION_EQ_FUND') or 'EQMX'),
+    'BOND': (getenv('ROTATION_BOND_INDEX') or 'RUGBITR3Y', getenv('ROTATION_BOND_FUND') or 'SBRB'),
+    'CASH': (getenv('ROTATION_CASH_INDEX') or 'RUSFAR', getenv('ROTATION_CASH_FUND') or 'LQDT'),
+}
+ROTATION_CASH_FEE = env_float('ROTATION_CASH_FEE', 0.004)  # комиссия фонда денежного рынка, год
+ROTATION_FUND_FEE = env_float('ROTATION_FUND_FEE', 0.008)  # комиссия фондов акций/облигаций, год
+ROTATION_COST = env_float('ROTATION_COST', 0.0015)  # издержки переключения на сторону
+
 # Режим рынка: не покупать, если IMOEX ниже SMA и падает.
 REGIME_FILTER = env_bool('REGIME_FILTER', True)
 REGIME_SMA = env_int('REGIME_SMA', 50)
@@ -93,8 +141,33 @@ AI_URL = getenv('AI_URL') or 'http://127.0.0.1:8000'
 AI_PASSWORD = getenv('AI_PASSWORD') or ''
 AI_MODEL = getenv('AI_MODEL') or 'qwen36-35b-a3b'
 AI_TIMEOUT = env_float('AI_TIMEOUT', 900)
+AI_RETRIES = env_int('AI_RETRIES', 3)
 AI_MIN_CONFIDENCE = env_int('AI_MIN_CONFIDENCE', 40)
 AI_PROJECT = 'iss_filter_algorithm'
+
+# Реверсивный алгоритм (elements/reverse): правила «от обратного» по опыту + новостной фон.
+REVERSE_ENABLED = env_bool('REVERSE_ENABLED', True)
+# Локальные модели AI_Manager: оценка новостей и проверка сигналов — лучшая по русскому
+# тексту; разбор опыта и новые гипотезы (раз в сутки, ночью) — модель с рассуждением.
+REVERSE_NEWS_MODEL = getenv('REVERSE_NEWS_MODEL') or AI_MODEL
+REVERSE_MIND_MODEL = getenv('REVERSE_MIND_MODEL') or 'gpt-oss-20b'
+REVERSE_REVIEW = env_bool('REVERSE_REVIEW', True)  # ИИ-проверка сигналов реверсивного по новостям
+# Окна демона `main.py reverse` (МСК): сбор и оценка новостей; разбор опыта — в ночном окне.
+REVERSE_NEWS_EVERY = env_int('REVERSE_NEWS_EVERY', 1200)  # секунд между сборами новостей
+REVERSE_NIGHT = getenv('REVERSE_NIGHT') or '22:30-05:30'
+REVERSE_SCORE_DEADLINE = env_float('REVERSE_SCORE_DEADLINE', 6.20)  # до сигналов (SIGNAL_TIME)
+# Ленты новостей (RSS, через запятую) и параметры оценки.
+NEWS_FEEDS = [url.strip() for url in (getenv('NEWS_FEEDS') or ','.join([
+    'https://www.interfax.ru/rss.asp',
+    'https://www.finam.ru/analysis/conews/rsspoint/',
+    'https://1prime.ru/export/rss2/index.xml',
+    'https://www.vedomosti.ru/rss/rubric/finance/markets',
+    'https://www.kommersant.ru/RSS/section-economics.xml',
+    'https://tass.ru/rss/v2.xml',
+    'https://smart-lab.ru/rss/',
+])).split(',') if url.strip()]
+NEWS_BATCH = env_int('NEWS_BATCH', 30)
+NEWS_SHIFT_HOURS = env_float('NEWS_SHIFT_HOURS', 6.5)  # новость до 06:30 — к сигналу прошлого дня
 
 # Расписание (время МСК, часы.минуты как float: 18.45 = 18:45).
 SIGNAL_TIME = env_float('SIGNAL_TIME', 6.30)

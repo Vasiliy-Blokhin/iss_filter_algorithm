@@ -55,15 +55,19 @@ def test_trade_outcome_stop_and_take():
         'OPEN': [100, 100, 100, 100], 'HIGH': [101, 101, 110, 100],
         'LOW': [99, 99, 99, 90], 'CLOSE': [100, 100, 105, 95], 'ATR': [2, 2, 2, 2],
     })
-    result = trade_outcomes(frame, hold=2, stop_atr=1.5, take_atr=2.0)
+    result = trade_outcomes(frame, hold=2, stop_atr=1.5, take_atr=2.0, exit_at_open=False)
     assert result.loc[0, 'EXIT_KIND'] == 'take'  # вход 100, тейк 104 на второй день
     assert result.loc[0, 'TRADE_RET'] == pytest.approx(0.04 - costs)
     assert result.loc[1, 'EXIT_KIND'] == 'take'  # вход 100, high 110 в день входа
     frame['HIGH'] = [101, 101, 101, 100]
-    result = trade_outcomes(frame, hold=2, stop_atr=1.5, take_atr=2.0)
+    result = trade_outcomes(frame, hold=2, stop_atr=1.5, take_atr=2.0, exit_at_open=False)
     assert result.loc[1, 'EXIT_KIND'] == 'stop'  # вход 100, стоп 97: low 90 на 2-й день
     assert result.loc[1, 'TRADE_RET'] == pytest.approx(-0.03 - costs)
     assert np.isnan(result.loc[2, 'TRADE_RET'])  # нет данных для выхода
+    # Выход по открытию последнего дня: вход 100 (open дня 1), выход по open дня 2 = 100.
+    result = trade_outcomes(frame, hold=2, stop_atr=1.5, take_atr=20.0, exit_at_open=True)
+    assert result.loc[0, 'EXIT_KIND'] == 'time' and result.loc[0, 'EXIT_OFFSET'] == 2
+    assert result.loc[0, 'TRADE_RET'] == pytest.approx(0.0 - costs)
 
 
 def test_no_lookahead_in_training(candles):
@@ -107,3 +111,59 @@ def test_ai_parse():
     from elements.ai.worker import AIReviewer
     verdict = AIReviewer.parse('ответ: {"decision": "SKIP", "confidence": 140, "reason": "отсечка"}')
     assert verdict == {'decision': 'skip', 'confidence': 100, 'reason': 'отсечка'}
+
+
+def test_strategy_choice_order():
+    """ Неделя решает; при близкой неделе — месяц; при близком месяце — день."""
+    import pandas as pd
+    from elements.selector.worker import StrategySelector
+
+    def stats(values):
+        return pd.DataFrame([
+            {'STRATEGY': name, 'PERIOD': period, 'RETURN': value, 'TRADES': 5,
+             'WIN_RATE': 0.5, 'AVG_TRADE': 0.001}
+            for name, row in values.items() for period, value in zip(('day', 'week', 'month'), row)
+        ])
+
+    # Явный лидер недели.
+    chosen, _ = StrategySelector.choose(stats({'a': (0, 0.03, 0.01), 'b': (0.01, 0.01, 0.05)}))
+    assert chosen == 'a'
+    # Недели близки (разница < 0.5%) — решает месяц.
+    chosen, _ = StrategySelector.choose(stats({'a': (0, 0.020, 0.01), 'b': (0, 0.018, 0.04)}))
+    assert chosen == 'b'
+    # Недели и месяцы близки — решает день.
+    chosen, _ = StrategySelector.choose(stats({'a': (0.002, 0.02, 0.03), 'b': (0.009, 0.02, 0.031)}))
+    assert chosen == 'b'
+    # У лучшей и неделя, и месяц в минусе — торговля приостановлена.
+    chosen, reason = StrategySelector.choose(stats({'a': (0, -0.01, -0.02), 'b': (0, -0.02, -0.01)}))
+    assert chosen is None and 'приостановлена' in reason
+
+
+def test_diversify_allocation():
+    """ Доли пропорциональны месячному результату, минусовые и нулевые исключены."""
+    import pandas as pd
+    from elements.selector.worker import StrategySelector
+
+    stats = pd.DataFrame([
+        {'STRATEGY': name, 'PERIOD': 'month', 'RETURN': value, 'TRADES': 5,
+         'WIN_RATE': 0.5, 'AVG_TRADE': 0.001}
+        for name, value in {'a': 0.03, 'b': 0.01, 'c': -0.02, 'd': 0.0}.items()
+    ])
+    allocation, reason = StrategySelector.diversify(stats)
+    assert allocation == {'a': 0.75, 'b': 0.25}
+    assert 'исключены: c, d' in reason
+
+    negative = stats.assign(RETURN=-0.01)
+    allocation, reason = StrategySelector.diversify(negative)
+    assert allocation == {} and 'приостановлена' in reason
+
+
+def test_equal_allocation():
+    """ Режим equal: поровну между правиловыми стратегиями независимо от статистики."""
+    import pandas as pd
+    from elements.selector.worker import StrategySelector
+    from elements.strategy.worker import STRATEGIES
+
+    allocation, _ = StrategySelector.allocate(pd.DataFrame(), mode='equal')
+    assert set(allocation) == set(STRATEGIES)
+    assert abs(sum(allocation.values()) - 1) < 1e-3
