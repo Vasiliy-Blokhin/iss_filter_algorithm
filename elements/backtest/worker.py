@@ -17,6 +17,8 @@ logger = logging.getLogger(name=__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(handler)
 
+METRICS = ('TRADES', 'WIN_RATE', 'AVG_TRADE', 'TOTAL_RETURN', 'MAX_DRAWDOWN', 'SHARPE', 'PROFIT_FACTOR')
+
 
 class Backtest(SQLmain):
 
@@ -98,4 +100,51 @@ class Backtest(SQLmain):
                     'PARAMS': json.dumps({'hold_days': HOLD_DAYS, 'max_signals': MAX_SIGNALS}),
                     **stats,
                 }, tables.BacktestRun)
+
+        for name, stats in cls.algorithm_stats(panel, start).items():
+            stats = {key: stats[key] for key in METRICS}
+            results[name] = {'stats': stats}
+            logger.info(
+                f'{name}: сделок {stats["TRADES"]}, win {stats["WIN_RATE"]:.1%}, '
+                f'средняя {stats["AVG_TRADE"]:.2%}, итог {stats["TOTAL_RETURN"]:.1%}, '
+                f'просадка {stats["MAX_DRAWDOWN"]:.1%}, Sharpe {stats["SHARPE"]:.2f}'
+            )
+            if save:
+                cls.append_data({
+                    'CREATED_AT': datetime.now(),
+                    'STRATEGY': name,
+                    'PERIOD_START': start.date(),
+                    'PERIOD_END': pd.Timestamp(dates[-1]).date(),
+                    # Свой портфельный симулятор: вход t+1, свой выход, риск до стопа.
+                    'PARAMS': json.dumps({'simulator': 'simulate_entries',
+                                          'news': name != 'reverse'}),
+                    **stats,
+                }, tables.BacktestRun)
+        return results
+
+    @staticmethod
+    def algorithm_stats(panel: pd.DataFrame, start: pd.Timestamp) -> dict[str, dict]:
+        """ Геномный (лучшие действующие этапы) и реверсивный (слепой прогон с нуля, без архива
+        новостей) на том же окне."""
+        from elements.evolve.genome import Genome
+        from elements.evolve.live import best_stages
+        from elements.evolve.market import EMarket
+        from elements.reverse.engine import simulate_entries
+        from elements.reverse.worker import ReverseAlgorithm
+        results = {}
+        try:
+            stages = best_stages()
+            if stages:
+                market = EMarket(panel)
+                first = int(np.searchsorted(market.dates, np.datetime64(start)))
+                for stage in stages:
+                    genome = Genome.from_dict(json.loads(stage['GENOME']))
+                    view, picks = market.picks(genome)
+                    results[f'evolve:{stage["id"]}'] = simulate_entries(view, picks, first, market.last)['stats']
+        except Exception as error:
+            logger.exception(f'Геномный в бэктесте: {error}')
+        try:
+            results['reverse'] = ReverseAlgorithm.blind(panel, start=str(start.date()))['stats']
+        except Exception as error:
+            logger.exception(f'Реверсивный в бэктесте: {error}')
         return results

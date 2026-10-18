@@ -24,7 +24,7 @@ class TelegramNotification:
 
     @staticmethod
     def chat_ids() -> list:
-        """ TLG_NOTICE_CHAT_ID или подписчики Telegram-бота (нажавшие /start)."""
+        """ TLG_REPORT_CHAT_ID или подписчики Telegram-бота (нажавшие /start в боте отчётов)."""
         if TELEGRAM_CHAT_ID:
             return [TELEGRAM_CHAT_ID]
         try:
@@ -37,11 +37,11 @@ class TelegramNotification:
     def send_message(cls, text: str):
         """ Уведомление в Telegram; без токена или получателей — только в лог."""
         if not TELEGRAM_TOKEN:
-            logger.info(f'(нет TLG_NOTICE_TOKEN) {text}')
+            logger.info(f'(нет TLG_REPORT_TOKEN) {text}')
             return
         recipients = cls.chat_ids()
         if not recipients:
-            logger.info(f'(нет подписчиков — нажмите /start в Telegram-боте) {text}')
+            logger.info(f'(нет подписчиков — нажмите /start в боте отчётов) {text}')
             return
         for chat_id in recipients:
             try:

@@ -195,24 +195,34 @@ def snap_params(proposal: dict, current: dict) -> dict:
     return result
 
 
-def check_params(panel: pd.DataFrame, current: dict, candidate: dict) -> tuple[bool, str]:
-    """ Слепой прогон за последние CHECK_DAYS дней: кандидат против действующих параметров."""
-    market = ReverseAlgorithm.market(panel)
+def reverse_blind(market: RMarket, params: dict) -> dict:
+    """ Слепой прогон с нуля за последние CHECK_DAYS дней: весь период и две половины
+    (в том же виде, что BlindBacktest.run — для общей проверки в самокоррекции)."""
     last = len(market.dates) - 1
     start = max(0, last - CHECK_DAYS)
     middle = (start + last) // 2
+    params = {**DEFAULT_REVERSE, **params}
+    first = max(params['lookback'] + 5, start - BOOTSTRAP_DAYS)
+    engine = ReverseEngine(market, params).run(first, last)
+    parts = [
+        simulate_entries(market, engine.picks, start, last)['stats'],
+        simulate_entries(market, engine.picks, start, middle)['stats'],
+        simulate_entries(market, engine.picks, middle + 1, last)['stats'],
+    ]
+    parts = [{**stats, 'SCORE': score_of(stats)} for stats in parts]
+    return {'stats': parts[0], 'halves': parts[1:],
+            'blind_start': market.date(start), 'data_end': market.date(last)}
+
+
+def check_params(panel: pd.DataFrame, current: dict, candidate: dict) -> tuple[bool, str]:
+    """ Слепой прогон за последние CHECK_DAYS дней: кандидат против действующих параметров."""
+    market = ReverseAlgorithm.market(panel)
     results = {}
     for name, params in (('current', current), ('candidate', candidate)):
-        params = {**DEFAULT_REVERSE, **params}
-        first = max(params['lookback'] + 5, start - BOOTSTRAP_DAYS)
-        engine = ReverseEngine(market, params).run(first, last)
-        results[name] = [
-            simulate_entries(market, engine.picks, start, last)['stats'],
-            simulate_entries(market, engine.picks, start, middle)['stats'],
-            simulate_entries(market, engine.picks, middle + 1, last)['stats'],
-        ]
-    current_score = [score_of(stats) for stats in results['current']]
-    candidate_score = [score_of(stats) for stats in results['candidate']]
+        result = reverse_blind(market, params)
+        results[name] = [result['stats'], *result['halves']]
+    current_score = [stats['SCORE'] for stats in results['current']]
+    candidate_score = [stats['SCORE'] for stats in results['candidate']]
     accepted = (
         candidate_score[0] >= current_score[0] + SELFTUNE_MARGIN
         and all(c >= b - SELFTUNE_HALF_TOLERANCE for c, b in zip(candidate_score[1:], current_score[1:]))

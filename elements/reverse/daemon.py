@@ -70,16 +70,22 @@ def night_reflection():
 def run_daemon():
     night = parse_windows(f'{REVERSE_NIGHT}/60-60')
     last_news = -float('inf')
+    status = 'started'
     tlg.send_message('Реверсивный алгоритм: демон новостей и разбора опыта стартовал.')
     while True:
         try:
             now = msk_now()
+            # Признак жизни каждую минуту: сбор новостей идёт раз в REVERSE_NEWS_EVERY (20 мин),
+            # а бот считает сервис упавшим, если отметки нет дольше 10 минут.
+            SQLmain.save_activity(SERVICE, status)
             if monotonic() - last_news >= REVERSE_NEWS_EVERY:
                 last_news = monotonic()
                 NewsCollector.collect()
                 scored = NewsScorer().run(limit=300, deadline=deadline_for(now) or now + timedelta(minutes=50))
-                SQLmain.save_activity(SERVICE, f'news scored {scored} at {now:%H:%M}')
+                status = f'news scored {scored} at {now:%H:%M}'
+                SQLmain.save_activity(SERVICE, status)
             if current_window(now, night):
+                SQLmain.save_activity(SERVICE, 'night reflection')
                 night_reflection()
         except Exception as error:
             logger.exception(error)
