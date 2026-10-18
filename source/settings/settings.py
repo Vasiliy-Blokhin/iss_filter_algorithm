@@ -109,6 +109,26 @@ MAX_POSITIONS = env_int('MAX_POSITIONS', 16)
 # минимальный прирост оценки для принятия кандидата и допуск по каждой половине периода.
 SELFTUNE_WINDOWS = getenv('SELFTUNE_WINDOWS') or '08:00-10:00/600-900;13:00-14:00/600-900;22:00-02:00/120-300'
 SELFTUNE_NIGHT = getenv('SELFTUNE_NIGHT') or '22:00-02:00'  # здесь же проверяются тяжёлые кандидаты (tuner)
+# Воскресенье: рекурсивный поиск по всем алгоритмам (coordinate descent от действующих
+# параметров: принятый кандидат становится новой точкой отсчёта), пауза между проверками в секундах.
+SELFTUNE_SUNDAY = getenv('SELFTUNE_SUNDAY') or '09:00-13:00/5-20;15:00-17:00/5-20'
+# Абстрактный алгоритм (elements/evolve): дни недели (0 = пн ... 6 = вс) и окна случайного
+# поиска геномов, начало периода поиска, длина контрольного периода (поиск его не видит),
+# порог фиксации этапа (CAGR и на поиске, и на контроле), минимум сделок, размер пула.
+EVOLVE_DAYS = getenv('EVOLVE_DAYS') or '6'
+EVOLVE_WINDOWS = getenv('EVOLVE_WINDOWS') or '09:00-13:00;15:00-17:00'
+EVOLVE_START = getenv('EVOLVE_START') or '2020-07-01'
+EVOLVE_HOLDOUT_DAYS = env_int('EVOLVE_HOLDOUT_DAYS', 250)
+EVOLVE_MIN_CAGR = env_float('EVOLVE_MIN_CAGR', 0.05)
+EVOLVE_MIN_TRADES = env_int('EVOLVE_MIN_TRADES', 60)
+EVOLVE_POOL = env_int('EVOLVE_POOL', 40)
+EVOLVE_SIMILAR = env_float('EVOLVE_SIMILAR', 0.7)  # корреляция с этапом, выше — это его вариант
+# Сигналы лучших действующих этапов (STRATEGY = 'evolve:<id>'); исполнитель берёт их только в paper.
+# Доля капитала позиции = доля из гена size × EVOLVE_LIVE_SHARE / число этапов.
+EVOLVE_SIGNALS = env_bool('EVOLVE_SIGNALS', True)
+EVOLVE_LIVE_STAGES = env_int('EVOLVE_LIVE_STAGES', 3)
+EVOLVE_LIVE_SHARE = env_float('EVOLVE_LIVE_SHARE', 1.0)
+SELFTUNE_REPORT_TIME = env_float('SELFTUNE_REPORT_TIME', 19.00)  # сводка в Telegram раз в сутки (МСК)
 BLIND_START = getenv('BLIND_START') or '2021-01-01'
 SELFTUNE_MARGIN = env_float('SELFTUNE_MARGIN', 0.003)
 SELFTUNE_HALF_TOLERANCE = env_float('SELFTUNE_HALF_TOLERANCE', 0.01)
@@ -171,9 +191,12 @@ NEWS_SHIFT_HOURS = env_float('NEWS_SHIFT_HOURS', 6.5)  # новость до 06:
 
 # Расписание (время МСК, часы.минуты как float: 18.45 = 18:45).
 SIGNAL_TIME = env_float('SIGNAL_TIME', 6.30)
+# Ежедневный бэктест: вечерняя сессия до 23:50, с 23:55 свеча дня считается завершённой.
+BACKTEST_TIME = env_float('BACKTEST_TIME', 23.56)
 LOOP_SLEEP = env_int('LOOP_SLEEP', 60)
 
 # Telegram-уведомления (необязательно).
-TELEGRAM_TOKEN = getenv('TLG_NOTICE_TOKEN') or ''
-TELEGRAM_CHAT_ID = getenv('TLG_NOTICE_CHAT_ID') or ''
+# Отчёты и логи идут в отдельный бот (не в бота с кнопками).
+TELEGRAM_TOKEN = getenv('TLG_REPORT_TOKEN') or ''
+TELEGRAM_CHAT_ID = getenv('TLG_REPORT_CHAT_ID') or ''
 START_MESSAGE = '---Project: iss_filter_algorithm---\n'

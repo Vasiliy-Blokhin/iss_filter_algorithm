@@ -6,7 +6,8 @@
     python main.py signals     — сформировать сигналы по последнему закрытию
     python main.py statistic   — последние результаты бэктестов
     python main.py stats       — теневая статистика стратегий и выбор (--days N — история)
-    python main.py run         — демон: каждое утро буднего дня update + signals
+    python main.py run         — демон: каждое утро буднего дня update + signals,
+                                 по будням в BACKTEST_TIME (23:56) — бэктест завершённого дня
     python main.py selftune    — демон самокоррекции (слепые бэктесты в окнах SELFTUNE_WINDOWS)
     python main.py blind       — слепой бэктест действующих параметров по текущий день
     python main.py rotation    — ротация фондов: обновить индексы, цель месяца и бэктест
@@ -14,6 +15,10 @@
     python main.py reverse     — реверсивный алгоритм: шаг жизненного цикла, правила, журнал
                                  (--blind — слепой прогон с нуля, --reflect — разбор опыта ИИ)
     python main.py reverse-daemon — демон новостей и ночного разбора опыта (iss_reverse)
+    python main.py evolve      — демон абстрактного алгоритма: случайный рекурсивный поиск геномов
+                                 в окнах EVOLVE_WINDOWS по дням EVOLVE_DAYS (iss_evolve);
+                                 --steps N — сразу N шагов без ожидания окна
+    python main.py stages      — зафиксированные этапы абстрактного алгоритма
 """
 import argparse
 import json
@@ -31,7 +36,9 @@ from elements.rotation.worker import Rotation, backtest as rotation_backtest
 from elements.selftune.params import apply_active_strategy_params, load_active
 from elements.strategy.worker import STRATEGY_TITLES
 from elements.notification.worker import TelegramNotification as tlg, signals_message
-from source.settings.settings import handler, TIMEZONE, SIGNAL_TIME, LOOP_SLEEP, ROTATION_ENABLED
+from source.settings.settings import (
+    handler, TIMEZONE, SIGNAL_TIME, BACKTEST_TIME, LOOP_SLEEP, ROTATION_ENABLED,
+)
 
 
 # Запуск логгера.
@@ -73,14 +80,36 @@ def show_strategy_stats(days: int):
         )
 
 
+def run_backtest(days: int = 250, update: bool = True) -> dict:
+    """ Бэктест всех стратегий, геномного и реверсивного по последнему завершённому дню."""
+    if update:
+        loader = DataLoader()
+        loader.update_history()
+        loader.update_dividends()
+    apply_active_strategy_params()
+    panel = Algorithm.build_panel(Algorithm.complete_candles())
+    results = Backtest.run(panel, test_days=days)
+    best = sorted(results.items(), key=lambda item: -item[1]['stats']['SHARPE'])[:3]
+    logger.info(
+        f'Бэктест по {panel["DATE"].max().date()}: '
+        + ', '.join(f'{name} Sharpe {result["stats"]["SHARPE"]:.2f}' for name, result in best)
+    )
+    return {'panel': panel, 'results': results}
+
+
 def daemon():
     last_run = None
+    last_backtest = None
     tlg.send_message('Сервис стартовал.')
     while True:
         try:
             now = msk_now()
-            Algorithm.save_activity(SERVICE, f'last signals run: {last_run}')
+            Algorithm.save_activity(SERVICE, f'last signals run: {last_run}, backtest: {last_backtest}')
             current = now.hour + now.minute / 100
+            # Сразу после вечерней сессии (свеча дня уже завершена — см. complete_candles).
+            if now.weekday() < 5 and current >= BACKTEST_TIME and last_backtest != now.date():
+                last_backtest = now.date()
+                run_backtest()
             if now.weekday() < 5 and current >= SIGNAL_TIME and last_run != now.date():
                 loader = DataLoader()
                 loader.update_history()
@@ -157,6 +186,33 @@ def show_reverse():
         logger.info(f'{row["DATE"]} {row["KIND"]}: {row["TEXT"]}')
 
 
+def run_evolve(steps: int):
+    from elements.evolve.worker import Evolver, run_daemon as run_evolve_daemon
+    if not steps:
+        run_evolve_daemon()
+        return
+    evolver = Evolver()
+    evolver.ensure_market()
+    for _ in range(steps):
+        evolver.step()
+    logger.info(evolver.session_report())
+
+
+def show_stages():
+    from elements.evolve.worker import Evolver
+    stages = Evolver.stages(active=False)
+    if not stages:
+        logger.info('Этапов абстрактного алгоритма пока нет.')
+    for row in stages:
+        logger.info(
+            f'этап {row["id"]} {"действует" if row["ACTIVE"] else "снят"}'
+            + (f', от этапа {row["PARENT_ID"]}' if row['PARENT_ID'] else '')
+            + f' ({row["OPERATOR"]}): поиск CAGR {row["CAGR"]:+.1%}, просадка {row["MAX_DRAWDOWN"]:.1%}, '
+            f'сделок {row["TRADES"]}; контроль с {row["HOLDOUT_START"]} CAGR {row["HOLD_CAGR"]:+.1%}; '
+            f'{row["NOTE"]}'
+        )
+
+
 def show_statistic():
     rows = Algorithm.run_sql_command(
         'SELECT * FROM backtest_runs ORDER BY id DESC LIMIT 10'
@@ -190,8 +246,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('command', choices=[
         'update', 'backtest', 'signals', 'statistic', 'stats', 'run', 'selftune', 'blind', 'rotation',
-        'news', 'reverse', 'reverse-daemon',
+        'news', 'reverse', 'reverse-daemon', 'evolve', 'stages',
     ])
+    parser.add_argument('--steps', type=int, default=0, help='evolve: выполнить N шагов сразу')
     parser.add_argument('--no-ai', action='store_true', help='не вызывать AI_Manager')
     parser.add_argument('--blind', action='store_true', help='reverse: слепой прогон с нуля')
     parser.add_argument('--reflect', action='store_true', help='reverse: разбор опыта локальной моделью')
@@ -206,9 +263,7 @@ if __name__ == '__main__':
         loader.update_dividends()
         Rotation.update_indexes()
     elif args.command == 'backtest':
-        apply_active_strategy_params()
-        panel = Algorithm.build_panel(Algorithm.complete_candles())
-        Backtest.run(panel, test_days=args.days)
+        panel = run_backtest(args.days, update=False)['panel']
         result = StrategySelector.evaluate(panel, days=args.days)
         for name, stats in result.items():
             logger.info(
@@ -237,5 +292,9 @@ if __name__ == '__main__':
     elif args.command == 'reverse-daemon':
         from elements.reverse.daemon import run_daemon as run_reverse_daemon
         run_reverse_daemon()
+    elif args.command == 'evolve':
+        run_evolve(args.steps)
+    elif args.command == 'stages':
+        show_stages()
     else:
         daemon()

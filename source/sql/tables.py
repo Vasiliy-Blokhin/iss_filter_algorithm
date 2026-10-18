@@ -95,6 +95,7 @@ class Signal(Base):
     STATUS: Mapped[str] = mapped_column(default='new')  # new / approved / rejected / used / expired
     STRATEGY: Mapped[Optional[str]]  # стратегия(и), давшие сигнал: 'squeeze' или 'squeeze+momentum'
     WEIGHT: Mapped[Optional[float]]  # доля капитала на позицию (с учётом распределения по стратегиям)
+    EXIT_AT_OPEN: Mapped[Optional[bool]]  # выход по времени на открытии дня HOLD_DAYS (этапы evolve)
 
 
 class StrategyStat(Base):
@@ -193,6 +194,56 @@ class SelftuneRun(Base):
     ACCEPTED: Mapped[bool] = mapped_column(default=False)
     SECONDS: Mapped[Optional[float]]
     NOTE: Mapped[Optional[str]]
+
+
+class EvolveStage(Base):
+    """ Зафиксированные этапы абстрактного алгоритма: геном с CAGR не ниже порога и на периоде
+    поиска, и на контрольном периоде. PARENT_ID — этап, от которого он получен (цепочка)."""
+    __tablename__ = 'evolve_stages'
+
+    id: Mapped[intpk]
+    CREATED_AT: Mapped[datetime]
+    GENOME: Mapped[str]  # JSON
+    GENOME_KEY: Mapped[str] = mapped_column(index=True)
+    PARENT_ID: Mapped[Optional[int]]
+    OPERATOR: Mapped[Optional[str]]
+    SEED: Mapped[Optional[int]]
+    DATA_END: Mapped[Optional[date]]
+    HOLDOUT_START: Mapped[Optional[date]]
+    CAGR: Mapped[Optional[float]]  # период поиска
+    MAX_DRAWDOWN: Mapped[Optional[float]]
+    SHARPE: Mapped[Optional[float]]
+    TRADES: Mapped[Optional[int]]
+    SCORE: Mapped[Optional[float]]
+    H1_CAGR: Mapped[Optional[float]]
+    H2_CAGR: Mapped[Optional[float]]
+    HOLD_CAGR: Mapped[Optional[float]]  # контрольный период
+    HOLD_DD: Mapped[Optional[float]]
+    HOLD_TRADES: Mapped[Optional[int]]
+    ACTIVE: Mapped[bool] = mapped_column(default=True)
+    NOTE: Mapped[Optional[str]]
+
+
+class EvolveRun(Base):
+    """ Журнал всех проверенных геномов абстрактного алгоритма."""
+    __tablename__ = 'evolve_runs'
+
+    id: Mapped[intpk]
+    CREATED_AT: Mapped[datetime] = mapped_column(index=True)
+    OPERATOR: Mapped[str]
+    SEED: Mapped[int]
+    PARENT: Mapped[Optional[str]]  # 'stage:<id>' / 'pool' / None
+    GENOME: Mapped[str]
+    CAGR: Mapped[Optional[float]]
+    MAX_DRAWDOWN: Mapped[Optional[float]]
+    TRADES: Mapped[Optional[int]]
+    SCORE: Mapped[Optional[float]]
+    H1_CAGR: Mapped[Optional[float]]
+    H2_CAGR: Mapped[Optional[float]]
+    HOLD_CAGR: Mapped[Optional[float]]  # только у прошедших поиск
+    IMPROVED: Mapped[bool] = mapped_column(default=False)  # лучше родителя
+    STAGE_ID: Mapped[Optional[int]]
+    SECONDS: Mapped[Optional[float]]
 
 
 class SelftuneSegment(Base):

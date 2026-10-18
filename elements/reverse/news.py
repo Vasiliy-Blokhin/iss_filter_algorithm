@@ -289,6 +289,7 @@ class NewsScorer(SQLmain):
                           .values(SCORED=True))
                 s.commit()
             done += len(batch)
+            self.save_activity('reverse', f'news scoring {done}/{len(items)} at {msk_now():%H:%M}')
             logger.info(f'Оценено новостей {done}/{len(items)}, связей с бумагами {len(rows)}')
         return done
 

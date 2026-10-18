@@ -512,6 +512,14 @@ class ReverseEngine:
         return self
 
 
+def profit_factor(rets: np.ndarray) -> float:
+    """ Отношение суммарной прибыли сделок к суммарному убытку (не больше 99)."""
+    losses = -rets[rets < 0].sum()
+    if losses > 0:
+        return min(99.0, float(rets[rets > 0].sum() / losses))
+    return 99.0 if len(rets) else 0.0
+
+
 def simulate_entries(market: RMarket, picks: list, first_day: int, last_day: int) -> dict:
     """ Портфель по сигналам (день, строка, доля капитала): вход t+1, выход по исходу сделки,
     ограничения исполнителя — риск до стопа, MAX_POSITIONS, 100% капитала."""
@@ -549,6 +557,7 @@ def simulate_entries(market: RMarket, picks: list, first_day: int, last_day: int
     stats.update({
         'TRADES': len(taken), 'AVG_TRADE': float(rets.mean()) if len(rets) else 0.0,
         'WIN_RATE': float((rets > 0).mean()) if len(rets) else 0.0,
+        'PROFIT_FACTOR': profit_factor(rets),
         'EXPOSURE': exposure_sum / max(1, last_day - first_day + 1),
     })
     return {'stats': stats, 'daily': returns}

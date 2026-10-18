@@ -1,4 +1,5 @@
 """ Самокоррекция: быстрый симулятор, коррекция, слепой бэктест без заглядывания вперёд, демон."""
+import json
 import os
 import sys
 import tempfile
@@ -83,6 +84,18 @@ def test_windows():
     assert seconds_to_next_window(datetime(2026, 1, 5, 12, 0, 0), windows) == 3600
 
 
+def test_sunday_windows_and_neighbours():
+    from elements.selftune.worker import parse_windows, pick_window, neighbours
+    windows = parse_windows('08:00-10:00/600-900')
+    sunday = parse_windows('09:00-13:00/5-20;15:00-17:00/5-20')
+    assert pick_window(datetime(2026, 10, 18, 9, 30), windows, sunday) == (sunday[0], True)
+    assert pick_window(datetime(2026, 10, 18, 16, 59), windows, sunday) == (sunday[1], True)
+    assert pick_window(datetime(2026, 10, 18, 14, 0), windows, sunday) == (None, False)
+    assert pick_window(datetime(2026, 10, 19, 9, 30), windows, sunday) == (windows[0], False)  # пн
+    options = neighbours({'a': 2, 'b': 9}, {'a': [1, 2, 3], 'b': [1, 2]})
+    assert options == [{'a': 1, 'b': 9}, {'a': 3, 'b': 9}, {'a': 2, 'b': 1}, {'a': 2, 'b': 2}]
+
+
 def test_selftune_tick_updates_db(candles):
     from source.sql.main import SQLmain
     from elements.selftune.params import load_active, load_active_record, DEFAULT_PARAMS
@@ -100,3 +113,13 @@ def test_selftune_tick_updates_db(candles):
     tuner.tick(heavy=True)  # кандидат
     runs = SQLmain.run_sql_command('SELECT KIND, ACCEPTED FROM selftune_runs ORDER BY id')
     assert [row['KIND'] for row in runs][0] == 'refresh' and len(runs) == 2
+
+    # Воскресный рекурсивный поиск: точка отсчёта реверсивного + проверки соседей всех алгоритмов.
+    for _ in range(3):
+        tuner.sunday_tick()
+    kinds = [row['KIND'] for row in SQLmain.run_sql_command('SELECT KIND FROM selftune_runs ORDER BY id')]
+    assert 'reverse_refresh' in kinds and len(kinds) == 6
+    accepted = SQLmain.run_sql_command(
+        'SELECT KIND, PARAMS FROM selftune_runs WHERE ACCEPTED AND KIND NOT LIKE \'%refresh\' ORDER BY id')
+    if accepted:  # последнее принятое сохранено как действующее
+        assert json.loads(accepted[-1]['PARAMS'])[accepted[-1]['KIND']] == load_active(accepted[-1]['KIND'])

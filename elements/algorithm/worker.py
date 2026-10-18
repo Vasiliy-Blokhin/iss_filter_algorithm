@@ -19,6 +19,7 @@ from source.settings.settings import (
     handler,
     AI_ENABLED,
     AI_MIN_CONFIDENCE,
+    EVOLVE_SIGNALS,
     HOLD_DAYS,
     REVERSE_ENABLED,
     REVERSE_REVIEW,
@@ -82,6 +83,8 @@ class Algorithm(SQLmain):
                 merged[row['SECID']] = cls.make_signal(row, securities, sectors, last_date, strategy, weight)
         if REVERSE_ENABLED:
             cls.add_reverse(panel, merged, securities, sectors, last_date)
+        if EVOLVE_SIGNALS:
+            cls.add_evolve(panel, merged, securities, sectors, last_date)
         logger.info(f'Сигналов на {last_date.date()}: {len(merged)} ({list(merged)})')
 
         reviewer = AIReviewer() if use_ai and merged else None
@@ -128,6 +131,36 @@ class Algorithm(SQLmain):
             signal['LOGIC'] = pick['LOGIC']
             merged[row['SECID']] = signal
 
+    @classmethod
+    def add_evolve(cls, panel, merged, securities, sectors, last_date):
+        """ Сигналы лучших этапов абстрактного алгоритма со своим правилом выхода.
+        Бумагу, уже выбранную другой стратегией, не трогаем (у неё другой выход);
+        исполнитель берёт сигналы evolve только в paper-режиме."""
+        from elements.evolve.live import stage_signals
+        try:
+            picks = stage_signals(panel)
+        except Exception as error:
+            logger.exception(f'Абстрактный алгоритм: {error}')
+            return
+        for pick in picks:
+            row, strategy = pick['ROW'], f'evolve:{pick["STAGE"]}'
+            current = merged.get(row['SECID'])
+            if current:
+                if current['STRATEGY'].startswith('evolve:'):
+                    current['WEIGHT'] += pick['WEIGHT']
+                    current['STRATEGY'] += f'+{pick["STAGE"]}'
+                continue
+            row = row.copy()
+            row['PROBABILITY'] = pick['PROBABILITY']
+            row['EXPECTED_RETURN'] = pick['EXPECTED_RETURN']
+            signal = cls.make_signal(row, securities, sectors, last_date, strategy, pick['WEIGHT'])
+            signal.update({
+                'STOP_PRICE': float(row['CLOSE'] - pick['STOP'] * row['ATR']),
+                'TAKE_PRICE': float(row['CLOSE'] + pick['TAKE'] * row['ATR']),
+                'HOLD_DAYS': pick['HOLD'], 'EXIT_AT_OPEN': pick['AT_OPEN'],
+            })
+            merged[row['SECID']] = signal
+
     @staticmethod
     def strategy_picks(strategy, rows, panel, stats, sectors) -> pd.DataFrame:
         """ Отобранные стратегией бумаги дня (с оценками вероятности и ожидания)."""
@@ -165,6 +198,7 @@ class Algorithm(SQLmain):
             'STOP_PRICE': float(row['CLOSE'] - STOP_ATR * row['ATR']),
             'TAKE_PRICE': float(row['CLOSE'] + TAKE_ATR * row['ATR']),
             'HOLD_DAYS': HOLD_DAYS,
+            'EXIT_AT_OPEN': None,
             'FEATURES': {name: round(float(row[name]), 4) for name in FEATURES if pd.notna(row[name])},
             'AI_DECISION': 'n/a',
             'AI_CONFIDENCE': None,

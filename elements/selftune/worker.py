@@ -8,18 +8,26 @@
      окне, параметров переподбора (tuner, десятки секунд). Кандидат принимается, только если
      слепая оценка выше действующей на SELFTUNE_MARGIN и ни одна половина слепого периода
      не хуже действующей больше чем на SELFTUNE_HALF_TOLERANCE.
-Все проверки пишутся в selftune_runs.
+В воскресенье в окнах SELFTUNE_SUNDAY — рекурсивный поиск по всем алгоритмам (correction,
+tuner -> пороги стратегий, параметры реверсивного): перебираются все соседние значения сетки
+действующих параметров; принятый кандидат сохраняется и становится новой точкой, от которой
+поиск начинается заново, пока окрестность не исчерпана (локальный оптимум — тогда случайные
+прыжки на 2-3 параметра). Правило принятия то же.
+Все проверки пишутся в selftune_runs; в Telegram — одна сводка в сутки (SELFTUNE_REPORT_TIME).
 """
 import json
 import logging
 import random
-from datetime import datetime
+
+import sqlalchemy as sa
+from datetime import datetime, timedelta
 from time import sleep, monotonic
 from zoneinfo import ZoneInfo
 
 from elements.algorithm.worker import Algorithm
 from elements.notification.worker import TelegramNotification as tlg
 from elements.selftune.blind import BlindBacktest, SegmentStore
+from elements.reverse.engine import REVERSE_GRID
 from elements.selftune.params import (
     CORRECTION_GRID, TUNER_GRID, load_active, load_active_record, save_active,
     update_active_metrics, params_key,
@@ -29,11 +37,13 @@ from source.settings.settings import (
     TIMEZONE,
     SELFTUNE_WINDOWS,
     SELFTUNE_NIGHT,
+    SELFTUNE_SUNDAY,
+    SELFTUNE_REPORT_TIME,
     SELFTUNE_MARGIN,
     SELFTUNE_HALF_TOLERANCE,
     TARGET_CAGR,
 )
-from source.sql.main import SQLmain
+from source.sql.main import SQLmain, main_engine
 import source.sql.tables as tables
 
 
@@ -43,6 +53,9 @@ logger.addHandler(handler)
 
 SERVICE = 'selftune'
 TUNER_SHARE = 0.35  # доля «тяжёлых» кандидатов (tuner) в ночном окне
+SUNDAY = 6
+SUNDAY_GRIDS = {'correction': CORRECTION_GRID, 'tuner': TUNER_GRID, 'reverse': REVERSE_GRID}
+SUNDAY_JUMPS = 3  # случайных прыжков на алгоритм, когда окрестность исчерпана
 
 
 def parse_windows(spec: str) -> list[tuple[int, int, int, int]]:
@@ -84,6 +97,19 @@ def mutate(params: dict, grid: dict, rng: random.Random) -> dict:
     return result
 
 
+def neighbours(params: dict, grid: dict) -> list[dict]:
+    """ Все точки на шаг сетки от params (по одному параметру); вне сетки — все значения."""
+    result = []
+    for key, values in grid.items():
+        if params.get(key) in values:
+            index = values.index(params[key])
+            options = [values[i] for i in (index - 1, index + 1) if 0 <= i < len(values)]
+        else:
+            options = list(values)
+        result.extend({**params, key: value} for value in options)
+    return result
+
+
 def describe(stats: dict) -> str:
     return (f'CAGR {stats["CAGR"]:+.1%}, просадка {stats["MAX_DRAWDOWN"]:.1%}, '
             f'Sharpe {stats["SHARPE"]:.2f}, сделок {stats["TRADES"]}')
@@ -98,6 +124,9 @@ class SelfTuner(SQLmain):
         self.loaded_end = None
         self.incumbent: dict | None = None
         self.tried: set[str] = set()
+        self.panel = None
+        self.reverse: dict | None = None  # {'params', 'result', 'market'} — для воскресного поиска
+        self.queue: list[tuple[str, dict]] = []
 
     # --- данные ---------------------------------------------------------------
     def ensure_market(self) -> bool:
@@ -105,10 +134,12 @@ class SelfTuner(SQLmain):
         last = self.run_sql_command('SELECT MAX("DATE") AS last FROM candles')[0]['last']
         if self.blind is not None and last == self.loaded_end:
             return False
-        panel = Algorithm.build_panel(Algorithm.complete_candles())
-        self.blind = BlindBacktest(panel, self.store)
+        self.panel = Algorithm.build_panel(Algorithm.complete_candles())
+        self.blind = BlindBacktest(self.panel, self.store)
         self.loaded_end = last
         self.tried.clear()
+        self.reverse = None
+        self.queue = []
         logger.info(f'Самокоррекция: данные по {self.blind.data_end}')
         return True
 
@@ -131,44 +162,112 @@ class SelfTuner(SQLmain):
         else:
             update_active_metrics('strategy', stats, data_end)
         self.incumbent = {'tuner': tuner, 'correction': correction, 'result': result}
-        self.log_run('refresh', tuner, correction, result, None, True, monotonic() - started,
-                     f'живые пороги по {data_end}')
+        self.log_run('refresh', {'tuner': tuner, 'correction': correction}, result, None, True,
+                     monotonic() - started, f'живые пороги по {data_end}')
         logger.info(f'Самокоррекция refresh: слепой результат {describe(stats)} '
                     f'(цель {TARGET_CAGR:.0%} годовых)')
         return result
 
     def trial(self, heavy: bool) -> dict:
-        started = monotonic()
         kind = 'tuner' if heavy and self.rng.random() < TUNER_SHARE else 'correction'
-        tuner, correction = dict(self.incumbent['tuner']), dict(self.incumbent['correction'])
         for _ in range(20):
-            if kind == 'tuner':
-                tuner = mutate(self.incumbent['tuner'], TUNER_GRID, self.rng)
-            else:
-                correction = mutate(self.incumbent['correction'], CORRECTION_GRID, self.rng)
-            key = params_key({'tuner': tuner, 'correction': correction})
-            if key not in self.tried:
+            candidate = mutate(self.current(kind), SUNDAY_GRIDS[kind], self.rng)
+            if self.key(kind, candidate) not in self.tried:
                 break
-        self.tried.add(key)
-        result = self.blind.run(tuner, correction)
-        best = self.incumbent['result']
+        return self.check(kind, candidate)[0]
+
+    # --- общая проверка кандидата -----------------------------------------------
+    def current(self, kind: str) -> dict:
+        return self.reverse['params'] if kind == 'reverse' else self.incumbent[kind]
+
+    def combined(self, kind: str, candidate: dict) -> dict:
+        """ Полный набор параметров, который проверяется слепым бэктестом."""
+        if kind == 'reverse':
+            return {'reverse': candidate}
+        return {'tuner': self.incumbent['tuner'], 'correction': self.incumbent['correction'],
+                kind: candidate}
+
+    def key(self, kind: str, candidate: dict) -> str:
+        return params_key(self.combined(kind, candidate))
+
+    def ensure_reverse(self):
+        """ Слепой результат действующих параметров реверсивного (точка отсчёта поиска)."""
+        from elements.reverse.mind import reverse_blind
+        from elements.reverse.worker import ReverseAlgorithm
+        params = load_active('reverse')
+        if self.reverse is not None and self.reverse['params'] == params:
+            return
+        started = monotonic()
+        market = self.reverse['market'] if self.reverse else ReverseAlgorithm.market(self.panel)
+        result = reverse_blind(market, params)
+        self.reverse = {'params': params, 'result': result, 'market': market}
+        self.log_run('reverse_refresh', {'reverse': params}, result, None, True,
+                     monotonic() - started, f'реверсивный, слепо по {result["data_end"]}')
+
+    def check(self, kind: str, candidate: dict) -> tuple[dict, bool]:
+        """ Слепой бэктест кандидата; при положительном результате — сохранить в algo_params."""
+        started = monotonic()
+        self.tried.add(self.key(kind, candidate))
+        if kind == 'reverse':
+            from elements.reverse.mind import reverse_blind
+            result = reverse_blind(self.reverse['market'], candidate)
+            best = self.reverse['result']
+        else:
+            params = self.combined(kind, candidate)
+            result = self.blind.run(params['tuner'], params['correction'])
+            best = self.incumbent['result']
         accepted, note = self.accept(result, best)
-        self.log_run(kind, tuner, correction, result, best['stats']['SCORE'], accepted,
+        self.log_run(kind, self.combined(kind, candidate), result, best['stats']['SCORE'], accepted,
                      monotonic() - started, note)
-        if accepted:
-            changed = 'tuner' if kind == 'tuner' else 'correction'
-            save_active(changed, tuner if kind == 'tuner' else correction, result['stats'],
-                        result['data_end'], note)
+        if not accepted:
+            return result, False
+        save_active(kind, candidate, result['stats'], result['data_end'], note)
+        if kind == 'reverse':
+            self.reverse = {**self.reverse, 'params': candidate, 'result': result}
+        else:
             if kind == 'tuner':
-                live = self.blind.live_params(tuner)
+                live = self.blind.live_params(candidate)
                 save_active('strategy', live, result['stats'], result['data_end'],
                             'переподбор после смены tuner')
-            self.incumbent = {'tuner': tuner, 'correction': correction, 'result': result}
-            message = (f'Самокоррекция: приняты новые параметры ({changed}). Слепой бэктест '
-                       f'{result["blind_start"]}..{result["data_end"]}: {describe(result["stats"])}; '
-                       f'было CAGR {best["stats"]["CAGR"]:+.1%}.')
-            logger.info(message)
-            tlg.send_message(message)
+            self.incumbent = {**self.incumbent, kind: candidate, 'result': result}
+        logger.info(f'Самокоррекция: приняты новые параметры ({kind}). Слепой бэктест '
+                    f'{result["blind_start"]}..{result["data_end"]}: {describe(result["stats"])}; '
+                    f'было CAGR {best["stats"]["CAGR"]:+.1%}.')
+        return result, True
+
+    # --- воскресный рекурсивный поиск -------------------------------------------
+    def sunday_queue(self, first: str | None = None) -> list[tuple[str, dict]]:
+        """ Непроверенные соседи действующих параметров всех алгоритмов (сначала first);
+        если окрестность исчерпана — случайные прыжки от действующей точки."""
+        kinds = sorted(SUNDAY_GRIDS, key=lambda kind: kind != first)
+        queue = []
+        for kind in kinds:
+            options = [p for p in neighbours(self.current(kind), SUNDAY_GRIDS[kind])
+                       if self.key(kind, p) not in self.tried]
+            self.rng.shuffle(options)
+            queue += [(kind, p) for p in options]
+        if not queue:
+            for kind in kinds:
+                for _ in range(SUNDAY_JUMPS):
+                    jump = self.current(kind)
+                    for _ in range(self.rng.choice([2, 3])):
+                        jump = mutate(jump, SUNDAY_GRIDS[kind], self.rng)
+                    if self.key(kind, jump) not in self.tried:
+                        queue.append((kind, jump))
+        return queue
+
+    def sunday_tick(self) -> dict:
+        if self.ensure_market() or self.incumbent is None:
+            return self.refresh()
+        self.ensure_reverse()
+        if not self.queue:
+            self.queue = self.sunday_queue()
+        if not self.queue:
+            return self.incumbent['result']
+        kind, candidate = self.queue.pop(0)
+        result, accepted = self.check(kind, candidate)
+        if accepted:  # рекурсия: поиск заново от новой точки, начиная с того же алгоритма
+            self.queue = self.sunday_queue(first=kind)
         return result
 
     @staticmethod
@@ -184,11 +283,11 @@ class SelfTuner(SQLmain):
                 + ('' if halves_ok else ' (одна из половин хуже)'))
         return accepted, note
 
-    def log_run(self, kind, tuner, correction, result, incumbent_score, accepted, seconds, note):
+    def log_run(self, kind, params, result, incumbent_score, accepted, seconds, note):
         stats = result['stats']
         self.append_data({
             'CREATED_AT': datetime.now(), 'KIND': kind,
-            'PARAMS': json.dumps({'tuner': tuner, 'correction': correction}, sort_keys=True),
+            'PARAMS': json.dumps(params, sort_keys=True),
             'DATA_END': result['data_end'], 'BLIND_START': result['blind_start'],
             'CAGR': stats['CAGR'], 'MAX_DRAWDOWN': stats['MAX_DRAWDOWN'], 'SHARPE': stats['SHARPE'],
             'TRADES': stats['TRADES'], 'SCORE': stats['SCORE'],
@@ -203,25 +302,94 @@ class SelfTuner(SQLmain):
         return self.trial(heavy)
 
 
-def run_daemon(spec: str = SELFTUNE_WINDOWS):
+def get_state(key: str) -> str | None:
+    with main_engine.begin() as connection:
+        connection.execute(sa.text('CREATE TABLE IF NOT EXISTS bot_state (KEY TEXT PRIMARY KEY, VALUE TEXT)'))
+        return connection.execute(sa.text('SELECT VALUE FROM bot_state WHERE KEY = :key'),
+                                  {'key': key}).scalar()
+
+
+def set_state(key: str, value: str):
+    with main_engine.begin() as connection:
+        connection.execute(sa.text(
+            'INSERT INTO bot_state VALUES (:key, :value) '
+            'ON CONFLICT(KEY) DO UPDATE SET VALUE = excluded.VALUE'), {'key': key, 'value': value})
+
+
+def daily_report(since: datetime, errors: list[str]) -> str:
+    """ Сводка проверок за период: сколько кандидатов, что принято, текущий слепой результат."""
+    runs = SQLmain.run_sql_command(
+        'SELECT * FROM selftune_runs WHERE CREATED_AT > :since ORDER BY CREATED_AT', {'since': since})
+    trials = [run for run in runs if not run['KIND'].endswith('refresh')]
+    accepted = [run for run in trials if run['ACCEPTED']]
+    lines = [f'Самокоррекция за сутки: проверено кандидатов {len(trials)}, принято {len(accepted)}.']
+    for run in accepted:
+        lines.append(f'✅ {run["KIND"]}: CAGR {run["CAGR"]:+.1%}, просадка {run["MAX_DRAWDOWN"]:.1%}, '
+                     f'Sharpe {run["SHARPE"]:.2f} ({run["NOTE"]})')
+    current = [run for run in runs if run['KIND'] == 'refresh'
+               or (run['ACCEPTED'] and run['KIND'] in ('tuner', 'correction'))]
+    if current:
+        best = current[-1]
+        lines.append(f'Действующие параметры: слепой бэктест {best["BLIND_START"]}..{best["DATA_END"]}: '
+                     f'CAGR {best["CAGR"]:+.1%}, просадка {best["MAX_DRAWDOWN"]:.1%}, '
+                     f'Sharpe {best["SHARPE"]:.2f}, сделок {best["TRADES"]} (цель {TARGET_CAGR:.0%}).')
+    if errors:
+        lines.append(f'Ошибок: {len(errors)}, последняя: {errors[-1]}')
+    return '\n'.join(lines)
+
+
+def maybe_report(now: datetime, errors: list[str]):
+    """ Раз в сутки после SELFTUNE_REPORT_TIME отправить сводку."""
+    today = now.date().isoformat()
+    if now.hour + now.minute / 100 < SELFTUNE_REPORT_TIME or get_state('selftune_report') == today:
+        return
+    since = get_state('selftune_report_at')
+    since = datetime.fromisoformat(since) if since else datetime.now() - timedelta(days=1)
+    tlg.send_message(daily_report(since, errors))
+    errors.clear()
+    set_state('selftune_report', today)
+    set_state('selftune_report_at', datetime.now().isoformat(sep=' '))
+
+
+def pick_window(now: datetime, windows: list, sunday: list) -> tuple[tuple | None, bool]:
+    """ Активное окно и признак воскресного рекурсивного поиска (воскресные окна важнее)."""
+    if now.weekday() == SUNDAY:
+        window = current_window(now, sunday)
+        if window is not None:
+            return window, True
+    return current_window(now, windows), False
+
+
+def run_daemon(spec: str = SELFTUNE_WINDOWS, sunday_spec: str = SELFTUNE_SUNDAY):
     windows = parse_windows(spec)
+    sunday = parse_windows(sunday_spec)
     night = parse_windows(SELFTUNE_NIGHT + '/0-0')[0]
     tuner = SelfTuner()
-    logger.info(f'Самокоррекция запущена, окна: {spec}')
+    errors: list[str] = []
+    logger.info(f'Самокоррекция запущена, окна: {spec}; воскресенье: {sunday_spec}')
     while True:
         now = datetime.now(ZoneInfo(TIMEZONE))
-        window = current_window(now, windows)
+        try:
+            maybe_report(now, errors)
+        except Exception as error:
+            logger.exception(error)
+        window, recursive = pick_window(now, windows, sunday)
         if window is None:
             SQLmain.save_activity(SERVICE, 'ожидание окна самокоррекции')
-            sleep(min(seconds_to_next_window(now, windows), 300))
+            waits = windows + (sunday if now.weekday() == SUNDAY else [])
+            sleep(min(seconds_to_next_window(now, waits), 300))
             continue
         started = monotonic()
         try:
-            heavy = in_window(now.hour * 60 + now.minute, night[0], night[1])
-            result = tuner.tick(heavy)
-            SQLmain.save_activity(SERVICE, f'слепой CAGR {result["stats"]["CAGR"]:+.1%}')
+            if recursive:
+                result = tuner.sunday_tick()
+            else:
+                heavy = in_window(now.hour * 60 + now.minute, night[0], night[1])
+                result = tuner.tick(heavy)
+            SQLmain.save_activity(SERVICE, ('воскресный поиск, ' if recursive else '')
+                                  + f'слепой CAGR {result["stats"]["CAGR"]:+.1%}')
         except Exception as error:
             logger.exception(error)
-            tlg.send_message(f'Самокоррекция: ошибка - {error}')
+            errors.append(str(error)[:300])
         pause = tuner.rng.uniform(window[2], window[3]) - (monotonic() - started)
         sleep(max(5.0, pause))
