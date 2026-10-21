@@ -96,6 +96,26 @@ class Signal(Base):
     STRATEGY: Mapped[Optional[str]]  # стратегия(и), давшие сигнал: 'squeeze' или 'squeeze+momentum'
     WEIGHT: Mapped[Optional[float]]  # доля капитала на позицию (с учётом распределения по стратегиям)
     EXIT_AT_OPEN: Mapped[Optional[bool]]  # выход по времени на открытии дня HOLD_DAYS (этапы evolve)
+    PRIORITY: Mapped[Optional[float]]  # приоритет стратегии (elements/pool): исполнитель входит по нему
+
+
+class StrategyPool(Base):
+    """ Пул стратегий на день: состав и приоритет по бэктесту и исполненным сделкам."""
+    __tablename__ = 'strategy_pool'
+    __table_args__ = (UniqueConstraint('DATE', 'STRATEGY'),)
+
+    id: Mapped[intpk]
+    DATE: Mapped[date] = mapped_column(index=True)
+    STRATEGY: Mapped[str]
+    KIND: Mapped[str]  # rules / model / reverse / evolve
+    BT_TRADES: Mapped[int]
+    BT_AVG: Mapped[Optional[float]]  # средняя сделка последнего бэктеста
+    BT_SHARPE: Mapped[Optional[float]]
+    REAL_TRADES: Mapped[int]  # закрытые позиции исполнителя (paper и live)
+    REAL_AVG: Mapped[Optional[float]]
+    SCORE: Mapped[float]  # оценка средней сделки
+    PRIORITY: Mapped[float]
+    CREATED_AT: Mapped[datetime]
 
 
 class StrategyStat(Base):

@@ -21,6 +21,7 @@ from source.settings.settings import (
     AI_MIN_CONFIDENCE,
     EVOLVE_SIGNALS,
     HOLD_DAYS,
+    PRIORITY_ENABLED,
     REVERSE_ENABLED,
     REVERSE_REVIEW,
     STOP_ATR,
@@ -85,6 +86,7 @@ class Algorithm(SQLmain):
             cls.add_reverse(panel, merged, securities, sectors, last_date)
         if EVOLVE_SIGNALS:
             cls.add_evolve(panel, merged, securities, sectors, last_date)
+        cls.apply_priority(merged, last_date)
         logger.info(f'Сигналов на {last_date.date()}: {len(merged)} ({list(merged)})')
 
         reviewer = AIReviewer() if use_ai and merged else None
@@ -162,6 +164,22 @@ class Algorithm(SQLmain):
             merged[row['SECID']] = signal
 
     @staticmethod
+    def apply_priority(merged: dict, last_date):
+        """ Пул стратегий и их приоритет: сигнал получает приоритет лучшей из давших его
+        стратегий; при PRIORITY_ENABLED он умножает долю капитала."""
+        from elements.pool.worker import StrategyPool
+        try:
+            priorities = StrategyPool.refresh(last_date.date())
+        except Exception as error:
+            logger.exception(f'Пул стратегий: {error}')
+            return
+        for signal in merged.values():
+            priority = StrategyPool.signal_priority(signal['STRATEGY'], priorities)
+            signal['PRIORITY'] = priority
+            if PRIORITY_ENABLED:
+                signal['WEIGHT'] *= priority
+
+    @staticmethod
     def strategy_picks(strategy, rows, panel, stats, sectors) -> pd.DataFrame:
         """ Отобранные стратегией бумаги дня (с оценками вероятности и ожидания)."""
         last_date = rows['DATE'].max()
@@ -199,6 +217,7 @@ class Algorithm(SQLmain):
             'TAKE_PRICE': float(row['CLOSE'] + TAKE_ATR * row['ATR']),
             'HOLD_DAYS': HOLD_DAYS,
             'EXIT_AT_OPEN': None,
+            'PRIORITY': None,
             'FEATURES': {name: round(float(row[name]), 4) for name in FEATURES if pd.notna(row[name])},
             'AI_DECISION': 'n/a',
             'AI_CONFIDENCE': None,
