@@ -128,6 +128,20 @@ EVOLVE_SIMILAR = env_float('EVOLVE_SIMILAR', 0.7)  # корреляция с э�
 EVOLVE_SIGNALS = env_bool('EVOLVE_SIGNALS', True)
 EVOLVE_LIVE_STAGES = env_int('EVOLVE_LIVE_STAGES', 3)
 EVOLVE_LIVE_SHARE = env_float('EVOLVE_LIVE_SHARE', 1.0)
+
+# Пул стратегий (elements/pool): правиловые, model, реверсивный и топ-EVOLVE_LIVE_STAGES этапов
+# геномного; обновляется перед каждыми сигналами. Приоритет стратегии — по средней сделке:
+# бэктест (с поправкой на число сделок, PRIORITY_BT_K), а при PRIORITY_MIN_REAL_TRADES и более
+# исполненных сделках — смесь с ними (вес реальных n / (n + PRIORITY_REAL_K)).
+# Приоритет = 1 + оценка / PRIORITY_SCALE в пределах [PRIORITY_MIN, PRIORITY_MAX]; он умножает
+# долю капитала сигнала, а исполнитель входит сначала в сигналы с большим приоритетом.
+PRIORITY_ENABLED = env_bool('PRIORITY_ENABLED', True)
+PRIORITY_SCALE = env_float('PRIORITY_SCALE', 0.01)  # средняя сделка +1% -> приоритет x2
+PRIORITY_MIN = env_float('PRIORITY_MIN', 0.5)
+PRIORITY_MAX = env_float('PRIORITY_MAX', 2.0)
+PRIORITY_BT_K = env_int('PRIORITY_BT_K', 30)
+PRIORITY_MIN_REAL_TRADES = env_int('PRIORITY_MIN_REAL_TRADES', 20)
+PRIORITY_REAL_K = env_int('PRIORITY_REAL_K', 50)
 SELFTUNE_REPORT_TIME = env_float('SELFTUNE_REPORT_TIME', 19.00)  # сводка в Telegram раз в сутки (МСК)
 BLIND_START = getenv('BLIND_START') or '2021-01-01'
 SELFTUNE_MARGIN = env_float('SELFTUNE_MARGIN', 0.003)

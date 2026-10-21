@@ -23,7 +23,7 @@
 import argparse
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from time import sleep
 from zoneinfo import ZoneInfo
 
@@ -97,9 +97,19 @@ def run_backtest(days: int = 250, update: bool = True) -> dict:
     return {'panel': panel, 'results': results}
 
 
+def last_done(table: str, shift_hours: float = 0):
+    """ День последнего прогона по CREATED_AT таблицы (после перезапуска не повторять его)."""
+    try:
+        moment = Algorithm.run_sql_command(f'SELECT MAX(CREATED_AT) AS t FROM {table}')[0]['t']
+    except Exception:
+        return None
+    return (datetime.fromisoformat(str(moment)) - timedelta(hours=shift_hours)).date() if moment else None
+
+
 def daemon():
-    last_run = None
-    last_backtest = None
+    last_run = last_done('strategy_selection')
+    # Бэктест стартует в BACKTEST_TIME (23:56) и пишет строки уже после полуночи.
+    last_backtest = last_done('backtest_runs', shift_hours=1)
     tlg.send_message('Сервис стартовал.')
     while True:
         try:
