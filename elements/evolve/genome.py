@@ -12,7 +12,9 @@ from elements.evolve.genes import Gene, genes_of
 
 
 # слот: (минимум генов, максимум генов)
-SLOTS = {'filter': (1, 6), 'logic': (1, 1), 'score': (1, 3), 'exit': (1, 1), 'size': (1, 1)}
+SLOTS = {'filter': (1, 10), 'logic': (1, 1), 'score': (1, 5), 'exit': (1, 1), 'size': (1, 1)}
+RANDOM_EXTRA = 6   # случайный геном: до минимума слота + RANDOM_EXTRA генов
+SEED_GENES = 3     # новый геном с затравкой: от 1 до SEED_GENES успешных генов доноров
 
 
 def random_gene(rng, market, slot: str) -> Gene:
@@ -30,7 +32,7 @@ class Genome:
     def random(cls, rng, market) -> 'Genome':
         genes = {}
         for slot, (low, high) in SLOTS.items():
-            count = rng.randint(low, min(high, low + 2))
+            count = rng.randint(low, min(high, low + RANDOM_EXTRA))
             genes[slot] = [random_gene(rng, market, slot) for _ in range(count)]
         return cls(genes)
 
@@ -91,6 +93,35 @@ def any_gene(rng, genome: Genome) -> tuple[str, int]:
 def fresh(rng, market, parent, donors):
     """ Совершенно новый случайный геном."""
     return Genome.random(rng, market)
+
+
+def inherit(rng, market, gene: Gene) -> Gene:
+    """ Успешный ген донора: целиком (40%) или только 1–2 его параметра, остальные — случайные."""
+    if rng.random() < 0.4 or len(gene.space) < 2:
+        return gene
+    fresh_gene = type(gene).random(rng, market)
+    for key in rng.sample(list(gene.space), k=min(len(gene.space) - 1, rng.randint(1, 2))):
+        fresh_gene.p[key] = gene.p[key]
+    return fresh_gene
+
+
+@operator('seeded', 0.0)  # вес 0: не мутация родителя, а способ строить новые геномы (worker.step)
+def seeded(rng, market, parent, donors):
+    """ Новый случайный геном с затравкой: 1–SEED_GENES случайных успешных генов (или их
+    параметров) от доноров — этапов и лучших геномов сессии."""
+    child = Genome.random(rng, market)
+    if not donors:
+        return child
+    for _ in range(rng.randint(1, SEED_GENES)):
+        donor = rng.choice(donors)
+        slot, index = any_gene(rng, donor)
+        gene = inherit(rng, market, donor.genes[slot][index])
+        genes = child.genes[slot]
+        if len(genes) < SLOTS[slot][1] and rng.random() < 0.5:
+            genes.append(gene)
+        else:
+            genes[rng.randrange(len(genes))] = gene
+    return child
 
 
 @operator('jitter', 2.0)
@@ -169,7 +200,7 @@ def graft(rng, market, parent, donors):
 def storm(rng, market, parent, donors):
     """ Несколько случайных операторов подряд — дальний прыжок."""
     child = parent
-    names = [n for n in OPERATORS if n not in ('storm', 'fresh')]
+    names = [n for n in OPERATORS if n not in ('storm', 'fresh', 'seeded')]
     for _ in range(rng.randint(2, 4)):
         child = OPERATORS[rng.choice(names)][0](rng, market, child, donors)
     return child

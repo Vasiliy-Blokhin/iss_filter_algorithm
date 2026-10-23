@@ -152,7 +152,7 @@ OPS = Choice(['<', '>'])
 class Level(Gene):
     """ Признак выше/ниже своего исторического квантиля (квантиль — только по периоду поиска)."""
     name, slot, weight = 'level', 'filter', 1.5
-    space = {'feature': Feature(), 'op': OPS, 'q': Real(0.02, 0.98, 0.01)}
+    space = {'feature': Feature(), 'op': OPS, 'q': Real(0.01, 0.99, 0.01)}
 
     def evaluate(self, market):
         return compare(market.values[self.p['feature']], self.p['op'],
@@ -163,7 +163,7 @@ class Level(Gene):
 class CrossRank(Gene):
     """ Место бумаги среди всех бумаг этого дня по признаку (0 — худшая, 1 — лучшая)."""
     name, slot, weight = 'xrank', 'filter', 1.5
-    space = {'feature': Feature(), 'op': OPS, 'q': Real(0.02, 0.98, 0.01)}
+    space = {'feature': Feature(), 'op': OPS, 'q': Real(0.01, 0.99, 0.01)}
 
     def evaluate(self, market):
         return compare(market.rank(self.p['feature']), self.p['op'], self.p['q'])
@@ -173,7 +173,7 @@ class CrossRank(Gene):
 class Spread(Gene):
     """ Разница мест двух признаков в кросс-секции: «A заметно сильнее B»."""
     name, slot = 'spread', 'filter'
-    space = {'a': Feature(), 'b': Feature(), 'op': OPS, 'd': Real(-0.8, 0.8, 0.02)}
+    space = {'a': Feature(), 'b': Feature(), 'op': OPS, 'd': Real(-0.9, 0.9, 0.02)}
 
     def evaluate(self, market):
         return compare(market.rank(self.p['a']) - market.rank(self.p['b']), self.p['op'], self.p['d'])
@@ -183,7 +183,7 @@ class Spread(Gene):
 class Regime(Gene):
     """ Состояние рынка в целом (индекс, ширина рынка) выше/ниже исторического квантиля."""
     name, slot = 'regime', 'filter'
-    space = {'feature': Feature('market'), 'op': OPS, 'q': Real(0.05, 0.95, 0.01)}
+    space = {'feature': Feature('market'), 'op': OPS, 'q': Real(0.02, 0.98, 0.01)}
 
     def evaluate(self, market):
         return compare(market.values[self.p['feature']], self.p['op'],
@@ -200,12 +200,159 @@ class Weekday(Gene):
         return np.isin(market.weekday, self.p['days'])
 
 
+# --- свод правил «динамика бумаги» (22.10.2026) ----------------------------------------
+LAGS = Choice([1, 2, 3, 4, 5, 7, 10, 15, 20, 30, 40, 60, 90, 120])
+WINDOWS = Choice([5, 10, 20, 40, 60, 120, 250])
+# Новые гены (свод «динамика» 22.10 и «вариации» 23.10): этап PHASES «новые своды» берёт их чаще.
+NEW_GENES = ('delta', 'xdelta', 'zlevel', 'streak', 'gated', 'delta_score', 'z_score',
+             'band', 'xband', 'persist', 'pair_score')
+
+
+@register
+class Delta(Gene):
+    """ Изменение признака бумаги за lag дней выше/ниже своего исторического квантиля."""
+    name, slot = 'delta', 'filter'
+    space = {'feature': Feature(), 'lag': LAGS, 'op': OPS, 'q': Real(0.05, 0.95, 0.01)}
+
+    def evaluate(self, market):
+        values = market.change(self.p['feature'], self.p['lag'])
+        key = ('change', self.p['feature'], self.p['lag'])
+        return compare(values, self.p['op'], market.dquantile(key, values, self.p['q']))
+
+
+@register
+class CrossDelta(Gene):
+    """ Место бумаги среди бумаг дня по изменению признака за lag дней (кто ускоряется)."""
+    name, slot = 'xdelta', 'filter'
+    space = {'feature': Feature(), 'lag': LAGS, 'op': OPS, 'q': Real(0.05, 0.95, 0.01)}
+
+    def evaluate(self, market):
+        key = ('change', self.p['feature'], self.p['lag'])
+        values = market.drank(key, market.change(self.p['feature'], self.p['lag']))
+        return compare(values, self.p['op'], self.p['q'])
+
+
+@register
+class ZLevel(Gene):
+    """ Признак далеко от своей нормы для этой бумаги (z-оценка за window дней)."""
+    name, slot = 'zlevel', 'filter'
+    space = {'feature': Feature(), 'window': WINDOWS, 'op': OPS, 'z': Real(-2.5, 2.5, 0.1)}
+
+    def evaluate(self, market):
+        return compare(market.zscore(self.p['feature'], self.p['window']), self.p['op'], self.p['z'])
+
+
+@register
+class Streak(Gene):
+    """ Серия дней роста (n > 0) или падения (n < 0) подряд: длиннее/короче n."""
+    name, slot, weight = 'streak', 'filter', 0.6
+    space = {'op': OPS, 'n': Int(-7, 7)}
+
+    def evaluate(self, market):
+        return compare(market.streak(), self.p['op'], self.p['n'])
+
+
+@register
+class Gated(Gene):
+    """ Условие на бумагу действует только в своём режиме рынка; вне режима — пропускать
+    всех (other = 1) или никого (other = 0)."""
+    name, slot = 'gated', 'filter'
+    space = {
+        'market': Feature('market'), 'mop': OPS, 'mq': Real(0.1, 0.9, 0.05),
+        'feature': Feature(), 'op': OPS, 'q': Real(0.05, 0.95, 0.01), 'other': Choice([0, 1]),
+    }
+
+    def evaluate(self, market):
+        regime = compare(market.values[self.p['market']], self.p['mop'],
+                         market.quantile(self.p['market'], self.p['mq']))
+        stock = compare(market.rank(self.p['feature']), self.p['op'], self.p['q'])
+        return np.where(regime, stock, bool(self.p['other']))
+
+
+@register
+class DeltaScore(Gene):
+    """ Вклад места бумаги по изменению признака за lag дней в итоговую оценку."""
+    name, slot = 'delta_score', 'score'
+    space = {'feature': Feature(), 'lag': LAGS, 'sign': Choice([-1, 1]), 'w': Real(0.1, 1.0, 0.05)}
+
+    def evaluate(self, market):
+        key = ('change', self.p['feature'], self.p['lag'])
+        values = market.drank(key, market.change(self.p['feature'], self.p['lag']))
+        return self.p['sign'] * self.p['w'] * np.nan_to_num(values, nan=0.5)
+
+
+@register
+class ZScoreScore(Gene):
+    """ Вклад отклонения признака от своей нормы (z за window дней, место в дне) в оценку."""
+    name, slot = 'z_score', 'score'
+    space = {'feature': Feature(), 'window': WINDOWS, 'sign': Choice([-1, 1]), 'w': Real(0.1, 1.0, 0.05)}
+
+    def evaluate(self, market):
+        key = ('zscore', self.p['feature'], self.p['window'])
+        values = market.drank(key, market.zscore(self.p['feature'], self.p['window']))
+        return self.p['sign'] * self.p['w'] * np.nan_to_num(values, nan=0.5)
+
+
+# --- свод «вариации» (23.10.2026): коридоры, устойчивость, пары -------------------------------
+@register
+class Band(Gene):
+    """ Признак внутри коридора своих исторических квантилей [lo, lo + width]."""
+    name, slot = 'band', 'filter'
+    space = {'feature': Feature(), 'lo': Real(0.0, 0.9, 0.01), 'width': Real(0.05, 0.6, 0.01)}
+
+    def evaluate(self, market):
+        values = market.values[self.p['feature']]
+        low = market.quantile(self.p['feature'], self.p['lo'])
+        high = market.quantile(self.p['feature'], min(1.0, self.p['lo'] + self.p['width']))
+        with np.errstate(invalid='ignore'):
+            return (values >= low) & (values <= high)
+
+
+@register
+class CrossBand(Gene):
+    """ Место бумаги среди бумаг дня внутри коридора [lo, lo + width] — «не крайние»."""
+    name, slot = 'xband', 'filter'
+    space = {'feature': Feature(), 'lo': Real(0.0, 0.9, 0.01), 'width': Real(0.05, 0.6, 0.01)}
+
+    def evaluate(self, market):
+        rank = market.rank(self.p['feature'])
+        with np.errstate(invalid='ignore'):
+            return (rank >= self.p['lo']) & (rank <= self.p['lo'] + self.p['width'])
+
+
+@register
+class Persist(Gene):
+    """ Условие держится: бумага в верхних (1 − q) по признаку не меньше чем в доле share
+    из последних n дней."""
+    name, slot = 'persist', 'filter'
+    space = {'feature': Feature(), 'q': Choice([0.5, 0.6, 0.7, 0.8, 0.9]), 'n': Choice([3, 5, 10, 20, 40, 60]),
+             'share': Real(0.4, 1.0, 0.1)}
+
+    def evaluate(self, market):
+        hits = market.persist(self.p['feature'], self.p['q'], self.p['n'])
+        return hits >= np.ceil(self.p['share'] * self.p['n'] - 1e-9)
+
+
+@register
+class PairScore(Gene):
+    """ Вклад сочетания двух признаков: произведение мест бумаги по ним (оба высоко/низко)."""
+    name, slot = 'pair_score', 'score'
+    space = {'a': Feature(), 'b': Feature(), 'sa': Choice([-1, 1]), 'sb': Choice([-1, 1]),
+             'w': Real(0.1, 1.0, 0.05)}
+
+    def evaluate(self, market):
+        def oriented(feature, sign):
+            rank = np.nan_to_num(market.rank(feature), nan=0.5)
+            return rank if sign > 0 else 1 - rank
+        return self.p['w'] * oriented(self.p['a'], self.p['sa']) * oriented(self.p['b'], self.p['sb'])
+
+
 # --- логика, оценка, выход, размер ------------------------------------------------------
 @register
 class Vote(Gene):
     """ Доля фильтров, которые должны выполниться (1 — все, 0.5 — половина)."""
     name, slot = 'vote', 'logic'
-    space = {'need': Real(0.4, 1.0, 0.05)}
+    space = {'need': Real(0.3, 1.0, 0.05)}
 
     def evaluate(self, market):
         return self.p['need']
@@ -235,8 +382,8 @@ class Noise(Gene):
 class Exit(Gene):
     name, slot = 'exit', 'exit'
     space = {
-        'hold': Int(1, 5), 'stop': Choice([1.0, 1.5, 2.0, 2.5, 3.0, 4.0]),
-        'take': Choice([1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 99.0]), 'at_open': Choice([0, 1]),
+        'hold': Int(1, 10), 'stop': Choice([0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0]),
+        'take': Choice([0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 6.0, 8.0, 99.0]), 'at_open': Choice([0, 1]),
     }
 
     def evaluate(self, market):
@@ -246,7 +393,7 @@ class Exit(Gene):
 @register
 class Size(Gene):
     name, slot = 'size', 'size'
-    space = {'slot': Real(0.03, 0.3, 0.01), 'top': Int(1, 10)}
+    space = {'slot': Real(0.02, 0.4, 0.01), 'top': Int(1, 20)}
 
     def evaluate(self, market):
         return self.p['slot'], self.p['top']

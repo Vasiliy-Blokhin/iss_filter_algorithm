@@ -17,7 +17,9 @@
     python main.py reverse-daemon — демон новостей и ночного разбора опыта (iss_reverse)
     python main.py evolve      — демон абстрактного алгоритма: случайный рекурсивный поиск геномов
                                  в окнах EVOLVE_WINDOWS по дням EVOLVE_DAYS (iss_evolve);
-                                 --steps N — сразу N шагов без ожидания окна
+                                 --steps N — сразу N шагов без ожидания окна;
+                                 --until 02:00 — этапы PHASES (новые гены, смешанный,
+                                 доработка этапов) до 02:00 со сводкой после каждого
     python main.py stages      — зафиксированные этапы абстрактного алгоритма
 """
 import argparse
@@ -196,8 +198,20 @@ def show_reverse():
         logger.info(f'{row["DATE"]} {row["KIND"]}: {row["TEXT"]}')
 
 
-def run_evolve(steps: int):
-    from elements.evolve.worker import Evolver, run_daemon as run_evolve_daemon
+def run_evolve(steps: int, until: str = ''):
+    from elements.evolve.worker import Evolver, run_daemon as run_evolve_daemon, run_phases, search_busy
+    if until:
+        if search_busy():
+            logger.warning('Геномный поиск уже идёт в другом процессе (data/evolve.lock) — запуск отменён.')
+            return
+        # Поэтапный прогон до ЧЧ:ММ МСК (если время уже прошло сегодня — до завтрашнего).
+        now = msk_now()
+        hour, minute = (int(part) for part in until.split(':'))
+        moment = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if moment <= now:
+            moment += timedelta(days=1)
+        run_phases(moment)
+        return
     if not steps:
         run_evolve_daemon()
         return
@@ -219,7 +233,9 @@ def show_stages():
             + (f', от этапа {row["PARENT_ID"]}' if row['PARENT_ID'] else '')
             + f' ({row["OPERATOR"]}): поиск CAGR {row["CAGR"]:+.1%}, просадка {row["MAX_DRAWDOWN"]:.1%}, '
             f'сделок {row["TRADES"]}; контроль с {row["HOLDOUT_START"]} CAGR {row["HOLD_CAGR"]:+.1%}; '
-            f'{row["NOTE"]}'
+            + (f'слепая с {row["BLIND_START"]} {row["BLIND_RETURN"]:+.1%} ({row["BLIND_TRADES"]} сд.); '
+               if row['BLIND_RETURN'] is not None else '')
+            + f'{row["NOTE"]}'
         )
 
 
@@ -259,6 +275,7 @@ if __name__ == '__main__':
         'news', 'reverse', 'reverse-daemon', 'evolve', 'stages',
     ])
     parser.add_argument('--steps', type=int, default=0, help='evolve: выполнить N шагов сразу')
+    parser.add_argument('--until', default='', help='evolve: поэтапный прогон до ЧЧ:ММ МСК (PHASES)')
     parser.add_argument('--no-ai', action='store_true', help='не вызывать AI_Manager')
     parser.add_argument('--blind', action='store_true', help='reverse: слепой прогон с нуля')
     parser.add_argument('--reflect', action='store_true', help='reverse: разбор опыта локальной моделью')
@@ -303,7 +320,7 @@ if __name__ == '__main__':
         from elements.reverse.daemon import run_daemon as run_reverse_daemon
         run_reverse_daemon()
     elif args.command == 'evolve':
-        run_evolve(args.steps)
+        run_evolve(args.steps, args.until)
     elif args.command == 'stages':
         show_stages()
     else:

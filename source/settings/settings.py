@@ -117,10 +117,21 @@ SELFTUNE_SUNDAY = getenv('SELFTUNE_SUNDAY') or '09:00-13:00/5-20;15:00-17:00/5-2
 # порог фиксации этапа (CAGR и на поиске, и на контроле), минимум сделок, размер пула.
 EVOLVE_DAYS = getenv('EVOLVE_DAYS') or '6'
 EVOLVE_WINDOWS = getenv('EVOLVE_WINDOWS') or '09:00-13:00;15:00-17:00'
+# Ежедневная часовая итерация (этапы PHASES) в остальные дни: пн–сб 09:00–10:00.
+EVOLVE_DAILY_DAYS = getenv('EVOLVE_DAILY_DAYS') or '0,1,2,3,4,5'
+EVOLVE_DAILY_WINDOW = getenv('EVOLVE_DAILY_WINDOW') or '09:00-10:00'
 EVOLVE_START = getenv('EVOLVE_START') or '2020-07-01'
 EVOLVE_HOLDOUT_DAYS = env_int('EVOLVE_HOLDOUT_DAYS', 250)
+# Последние EVOLVE_BLIND_DAYS из контрольного периода — слепая проверка: считается и пишется
+# (BLIND_*), но не участвует ни в отборе, ни в защите, ни в снятии этапов. Контроль для защиты —
+# первые EVOLVE_HOLDOUT_DAYS − EVOLVE_BLIND_DAYS дней.
+EVOLVE_BLIND_DAYS = env_int('EVOLVE_BLIND_DAYS', 60)
 EVOLVE_MIN_CAGR = env_float('EVOLVE_MIN_CAGR', 0.05)
 EVOLVE_MIN_TRADES = env_int('EVOLVE_MIN_TRADES', 60)
+# Упор на число сделок: штраф EVOLVE_ACTIVITY_PENALTY × нехватка до EVOLVE_TARGET_TRADES в год
+# на периоде поиска (0 сделок — полный штраф, цель и больше — без штрафа).
+EVOLVE_TARGET_TRADES = env_int('EVOLVE_TARGET_TRADES', 250)
+EVOLVE_ACTIVITY_PENALTY = env_float('EVOLVE_ACTIVITY_PENALTY', 1.0)
 EVOLVE_POOL = env_int('EVOLVE_POOL', 40)
 EVOLVE_SIMILAR = env_float('EVOLVE_SIMILAR', 0.7)  # корреляция с этапом, выше — это его вариант
 # Сигналы лучших действующих этапов (STRATEGY = 'evolve:<id>'); исполнитель берёт их только в paper.
