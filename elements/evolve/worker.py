@@ -3,8 +3,10 @@
 Шаг поиска:
   1. зерно шага — из системного источника случайности (secrets), пишется в журнал:
      следующий кандидат заранее не известен, но любой шаг воспроизводим по зерну;
-  2. родитель — зафиксированный этап (чаще лучшие), геном из пула лучших за сессию или
-     ничего (тогда новый случайный геном); доноры для скрещивания — этапы и пул;
+  2. родитель — зафиксированный этап (чаще лучшие, 35%), геном из пула лучших за сессию (35%)
+     или ничего (30%) — тогда новый геном: случайный набор генов с затравкой 1–3 успешных
+     генов или их параметров от доноров (seeded, 80%) либо совсем случайный (fresh);
+     доноры для скрещивания и затравки — этапы и пул;
   3. оператор (jitter / swap / grow / prune / cross / graft / storm / fresh, см. genome.py)
      выбирается случайно с весами по его истории успехов (потомок лучше родителя);
   4. оценка на периоде поиска; потомок, лучший родителя, занимает место в пуле — от него
@@ -13,7 +15,10 @@
      сделок >= EVOLVE_MIN_TRADES и CAGR >= EVOLVE_MIN_CAGR на контрольном периоде, который
      поиск не видит. Если кандидат похож на действующий этап (корреляция дневной доходности
      >= EVOLVE_SIMILAR), это корректировка: он фиксируется, только если лучше этого этапа, и
-     заменяет его; непохожий кандидат добавляется новым этапом.
+     заменяет его; непохожий кандидат добавляется новым этапом. Защита от подгонки: кандидат,
+     вытесняющий этап (похожий или худший из полного топа), должен иметь контроль не хуже его.
+     Оценка штрафует редкую торговлю: EVOLVE_ACTIVITY_PENALTY × нехватка сделок до
+     EVOLVE_TARGET_TRADES в год.
 При новых данных все действующие этапы перепроверяются; не прошедшие — снимаются (ACTIVE = 0).
 Действующих этапов не больше EVOLVE_LIVE_STAGES (3): новый этап, не попадающий в топ, не
 фиксируется, а вытесненный из топа лучшим — снимается. Поиск, сигналы, бот и отчёты видят только их.
@@ -22,7 +27,7 @@ import json
 import logging
 import random
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from time import monotonic, sleep
 from zoneinfo import ZoneInfo
 
@@ -36,8 +41,8 @@ from elements.evolve.market import EMarket
 from elements.notification.worker import TelegramNotification as tlg
 from elements.selftune.worker import parse_windows, current_window, seconds_to_next_window
 from source.settings.settings import (
-    handler, TIMEZONE, EVOLVE_DAYS, EVOLVE_WINDOWS, EVOLVE_MIN_CAGR, EVOLVE_MIN_TRADES, EVOLVE_POOL,
-    EVOLVE_SIMILAR, EVOLVE_LIVE_STAGES, SELFTUNE_MARGIN,
+    handler, TIMEZONE, DATA_DIR, EVOLVE_DAYS, EVOLVE_WINDOWS, EVOLVE_DAILY_DAYS, EVOLVE_DAILY_WINDOW, EVOLVE_MIN_CAGR, EVOLVE_MIN_TRADES, EVOLVE_POOL,
+    EVOLVE_SIMILAR, EVOLVE_LIVE_STAGES, EVOLVE_TARGET_TRADES, EVOLVE_ACTIVITY_PENALTY, SELFTUNE_MARGIN,
 )
 from source.sql.main import SQLmain, main_engine
 import source.sql.tables as tables
@@ -48,18 +53,24 @@ logger.setLevel(logging.DEBUG)
 logger.addHandler(handler)
 
 SERVICE = 'evolve'
-STAGE_PARENT_SHARE = 0.45  # доля шагов, где родитель — зафиксированный этап
-POOL_PARENT_SHARE = 0.45   # ... — геном из пула; остальное — новый случайный геном
+STAGE_PARENT_SHARE = 0.35  # доля шагов, где родитель — зафиксированный этап
+POOL_PARENT_SHARE = 0.35   # ... — геном из пула; остальное — новый геном
+SEEDED_SHARE = 0.8         # новый геном: с затравкой успешных генов (seeded), иначе fresh
 STALL_STEPS = 200        # шагов без улучшения лучшего в пуле до перезапуска пула
-ACTIVITY_PENALTY = 0.10    # вычет из оценки при нуле сделок (линейно до EVOLVE_MIN_TRADES)
+def target_trades(result: dict) -> float:
+    """ Цель по числу сделок на периоде поиска: EVOLVE_TARGET_TRADES в год (не меньше EVOLVE_MIN_TRADES)."""
+    start, end = result.get('search_start'), result.get('search_end')
+    years = (end - start).days / 365.25 if start and end else 1.0
+    return max(EVOLVE_MIN_TRADES, EVOLVE_TARGET_TRADES * years)
 
 
 def fitness(result: dict) -> float:
-    """ Оценка для отбора: CAGR + штраф за просадку, минус штраф за малое число сделок
-    (иначе поиск сползает к «почти не торговать» — на этом рынке это лучший нулевой результат)."""
+    """ Оценка для отбора: CAGR + штраф за просадку, минус штраф за малое число сделок —
+    EVOLVE_ACTIVITY_PENALTY × нехватка сделок до цели (упор на частую торговлю: иначе поиск
+    сползает к редким сделкам), минус провал худшей половины периода."""
     stats = result['stats']
-    shortfall = max(0.0, 1.0 - stats['TRADES'] / max(1, EVOLVE_MIN_TRADES))
-    return stats['SCORE'] - ACTIVITY_PENALTY * shortfall + min(0.0, *(h['CAGR'] for h in result['halves']))
+    shortfall = max(0.0, 1.0 - stats['TRADES'] / target_trades(result))
+    return stats['SCORE'] - EVOLVE_ACTIVITY_PENALTY * shortfall + min(0.0, *(h['CAGR'] for h in result['halves']))
 
 
 def new_session() -> dict:
@@ -70,6 +81,17 @@ def search_ok(result: dict) -> bool:
     stats = result['stats']
     return (stats['CAGR'] >= EVOLVE_MIN_CAGR and stats['TRADES'] >= EVOLVE_MIN_TRADES
             and all(half['CAGR'] > 0 for half in result['halves']))
+
+
+def holdout_guard(result: dict, displaced: dict | None, min_cagr: float) -> bool:
+    """Защита от подгонки: контроль не ниже порога и не хуже, чем у вытесняемого этапа."""
+    holdout = result['holdout']['CAGR']
+    if holdout < min_cagr:
+        return False
+    if displaced is None:
+        return True
+    previous = displaced.get('HOLD_CAGR')
+    return previous is None or holdout >= previous
 
 
 def holdout_ok(result: dict) -> bool:
@@ -83,6 +105,9 @@ def describe(result: dict) -> str:
             f'{result["halves"][1]["CAGR"]:+.1%}')
     if 'holdout' in result:
         text += f'; контроль CAGR {result["holdout"]["CAGR"]:+.1%} ({result["holdout"]["TRADES"]} сд.)'
+    if 'blind' in result:
+        blind = result['blind']
+        text += f'; слепая {blind["TOTAL_RETURN"]:+.1%} за период, CAGR {blind["CAGR"]:+.1%} ({blind["TRADES"]} сд.)'
     return text
 
 
@@ -98,6 +123,7 @@ class Evolver(SQLmain):
         self.daily_cache: dict = {}  # id этапа -> дневная доходность на периоде поиска
         self.ops = OperatorStats(self.operator_history())
         self.session = new_session()
+        self.stage_share = STAGE_PARENT_SHARE
 
     # --- данные и этапы -------------------------------------------------------------
     def ensure_market(self, panel=None) -> bool:
@@ -112,7 +138,8 @@ class Evolver(SQLmain):
         self.revalidate()
         logger.info(f'Абстрактный алгоритм: поиск {self.market.date(self.market.first)}..'
                     f'{self.market.date(self.market.search_end)}, контроль с '
-                    f'{self.market.date(self.market.hold_start)}')
+                    f'{self.market.date(self.market.hold_start)}, слепая проверка с '
+                    f'{self.market.date(self.market.blind_start)}')
         return True
 
     @staticmethod
@@ -176,16 +203,19 @@ class Evolver(SQLmain):
             'H1_CAGR': result['halves'][0]['CAGR'], 'H2_CAGR': result['halves'][1]['CAGR'],
             'HOLD_CAGR': holdout['CAGR'], 'HOLD_DD': holdout['MAX_DRAWDOWN'],
             'HOLD_TRADES': holdout['TRADES'],
+            'BLIND_START': result['blind_start'], 'BLIND_CAGR': result['blind']['CAGR'],
+            'BLIND_RETURN': result['blind']['TOTAL_RETURN'], 'BLIND_DD': result['blind']['MAX_DRAWDOWN'],
+            'BLIND_TRADES': result['blind']['TRADES'],
         }
 
     # --- шаг поиска -----------------------------------------------------------------
     def pick_parent(self, rng, stages: list[dict]) -> tuple[Genome | None, float | None, str | None, int | None]:
         roll = rng.random()
-        if stages and roll < STAGE_PARENT_SHARE:
+        if stages and roll < self.stage_share:
             weights = [1.0 / (rank + 1) for rank in range(len(stages))]  # лучшие — чаще
             stage = rng.choices(stages, weights=weights)[0]
             return Genome.from_dict(json.loads(stage['GENOME'])), stage['SCORE'], f'stage:{stage["id"]}', stage['id']
-        if self.pool and roll < STAGE_PARENT_SHARE + POOL_PARENT_SHARE:
+        if self.pool and roll < self.stage_share + POOL_PARENT_SHARE:
             entrant = max(rng.sample(self.pool, k=min(3, len(self.pool))),
                           key=lambda item: fitness(item['result']))  # турнир
             return entrant['genome'], fitness(entrant['result']), 'pool', None
@@ -199,7 +229,10 @@ class Evolver(SQLmain):
         donors = [Genome.from_dict(json.loads(s['GENOME'])) for s in stages[:20]] + \
                  [item['genome'] for item in self.pool]
         parent, parent_score, parent_label, parent_stage = self.pick_parent(rng, stages)
-        name = 'fresh' if parent is None else self.ops.choose(rng)
+        if parent is None:
+            name = 'seeded' if donors and rng.random() < SEEDED_SHARE else 'fresh'
+        else:
+            name = self.ops.choose(rng)
         child = None
         for _ in range(10):
             child = OPERATORS[name][0](rng, self.market, parent, donors).repair(rng, self.market)
@@ -207,6 +240,7 @@ class Evolver(SQLmain):
                 break
         self.seen.add(child.key())
 
+        self.last_genome = child
         result = self.market.evaluate(child)
         score = fitness(result)
         improved = parent_score is not None and score > parent_score
@@ -223,15 +257,16 @@ class Evolver(SQLmain):
             if rival is not None and similarity < EVOLVE_SIMILAR:
                 rival = None
             # Новый (непохожий) этап при полном топе должен быть лучше худшего из топа.
+            # Вытесняемый этап (похожий или худший из топа) задаёт и планку контроля.
             if rival is not None:
-                bar = rival['SCORE']
+                displaced = rival
             elif len(stages) >= EVOLVE_LIVE_STAGES:
-                bar = stages[EVOLVE_LIVE_STAGES - 1]['SCORE']
+                displaced = stages[EVOLVE_LIVE_STAGES - 1]
             else:
-                bar = None
-            if bar is None or score > bar + SELFTUNE_MARGIN:
+                displaced = None
+            if displaced is None or score > displaced['SCORE'] + SELFTUNE_MARGIN:
                 result = self.market.evaluate(child, holdout=True)
-                if holdout_ok(result):
+                if holdout_guard(result, displaced, EVOLVE_MIN_CAGR):
                     stage_id = self.fix_stage(child, result, rival['id'] if rival else parent_stage,
                                               name, seed, replaces=rival)
                     self.keep_top()
@@ -309,6 +344,7 @@ class Evolver(SQLmain):
             'SCORE': fitness(result), 'H1_CAGR': result['halves'][0]['CAGR'],
             'H2_CAGR': result['halves'][1]['CAGR'],
             'HOLD_CAGR': result['holdout']['CAGR'] if 'holdout' in result else None,
+            'BLIND_CAGR': result['blind']['CAGR'] if 'blind' in result else None,
             'IMPROVED': improved, 'STAGE_ID': stage_id, 'SECONDS': seconds,
         }, tables.EvolveRun)
 
@@ -325,30 +361,180 @@ class Evolver(SQLmain):
         for stage in stages[:EVOLVE_LIVE_STAGES]:
             lines.append(f'• этап {stage["id"]}: поиск CAGR {stage["CAGR"]:+.1%}, просадка '
                          f'{stage["MAX_DRAWDOWN"]:.1%}, сделок {stage["TRADES"]}; контроль '
-                         f'CAGR {stage["HOLD_CAGR"]:+.1%} ({stage["HOLD_TRADES"]} сд.)')
+                         f'CAGR {stage["HOLD_CAGR"]:+.1%} ({stage["HOLD_TRADES"]} сд.)'
+                         + (f'; слепая {stage["BLIND_RETURN"]:+.1%} ({stage["BLIND_TRADES"]} сд.)'
+                            if stage.get('BLIND_RETURN') is not None else ''))
         weights = sorted(((self.ops.weight(n), n) for n in OPERATORS), reverse=True)[:3]
         lines.append('Самые успешные операторы: ' + ', '.join(name for _, name in weights) + '.')
         return '\n'.join(lines)
 
 
-def run_daemon(days: str = EVOLVE_DAYS, spec: str = EVOLVE_WINDOWS):
+# Поэтапный прогон до заданного времени: (название, доля времени, множитель частоты новых
+# генов NEW_GENES, доля шагов с родителем-этапом).
+PHASES = [
+    ('новые своды правил', 0.35, 4.0, 0.25),
+    ('смешанный поиск', 0.30, 1.0, 0.45),
+    ('рекурсивная доработка этапов', 0.35, 1.0, 0.70),
+]
+
+
+LOCK = DATA_DIR / 'evolve.lock'  # идёт поиск (этапы PHASES): время последнего шага внутри
+LOCK_STALE = 600  # секунд без отметки — блокировка брошена (процесс упал)
+
+
+def search_busy() -> bool:
+    """ Идёт ли уже поэтапный поиск в другом процессе (два поиска сразу портят топ этапов)."""
+    try:
+        return LOCK.exists() and datetime.now().timestamp() - LOCK.stat().st_mtime < LOCK_STALE
+    except OSError:
+        return False
+
+
+def touch_lock():
+    LOCK.write_text(f'{datetime.now():%Y-%m-%d %H:%M:%S}', encoding='utf-8')
+
+
+def release_lock():
+    try:
+        LOCK.unlink()
+    except OSError:
+        pass
+
+
+def uses_new_genes(genome: Genome) -> bool:
+    from elements.evolve.genes import NEW_GENES
+    return any(gene.name in NEW_GENES for genes in genome.genes.values() for gene in genes)
+
+
+def run_phases(until: datetime, phases=PHASES) -> list[str]:
+    """ Этапы поиска до момента until (МСК): у каждого своя частота новых генов и доля
+    рекурсии от зафиксированных этапов; после каждого — сводка в лог и Telegram."""
+    from elements.evolve.genes import REGISTRY, NEW_GENES
+    touch_lock()
+    try:
+        return _run_phases(until, phases, REGISTRY, NEW_GENES)
+    finally:
+        release_lock()
+
+
+def _run_phases(until, phases, REGISTRY, NEW_GENES) -> list[str]:
+    evolver = Evolver()
+    evolver.ensure_market()
+    start = datetime.now(ZoneInfo(TIMEZONE))
+    total = (until - start).total_seconds()
+    reports = []
+    base_weights = {name: REGISTRY[name].weight for name in NEW_GENES}
+    for title, share, boost, stage_share in phases:
+        end = min(until, datetime.now(ZoneInfo(TIMEZONE)) + timedelta(seconds=total * share))
+        for name in NEW_GENES:
+            REGISTRY[name].weight = base_weights[name] * boost
+        evolver.stage_share = stage_share
+        evolver.session = new_session()
+        new_tried, new_best = 0, None
+        while datetime.now(ZoneInfo(TIMEZONE)) < end:
+            try:
+                result = evolver.step()
+            except Exception as error:
+                logger.exception(error)
+                continue
+            if uses_new_genes(evolver.last_genome):
+                new_tried += 1
+                if new_best is None or fitness(result) > fitness(new_best):
+                    new_best = result
+            if evolver.session['steps'] % 50 == 0:
+                touch_lock()
+                SQLmain.save_activity(SERVICE, f'{title}: шагов {evolver.session["steps"]}')
+        report = (f'Этап «{title}» (новые гены ×{boost:g}, рекурсия от этапов {stage_share:.0%}).\n'
+                  + evolver.session_report()
+                  + f'\nГеномов с новыми генами: {new_tried}'
+                  + (f', лучший: {describe(new_best)}' if new_best else ''))
+        logger.info(report)
+        reports.append(report)
+        try:
+            tlg.send_message(report)
+        except Exception as error:
+            logger.exception(error)
+    for name, weight in base_weights.items():
+        REGISTRY[name].weight = weight
+    return reports
+
+
+def pending_request() -> dict | None:
+    rows = SQLmain.run_sql_command("SELECT * FROM evolve_requests WHERE STATUS = 'new' ORDER BY id LIMIT 1")
+    return dict(rows[0]) if rows else None
+
+
+def set_request(request_id: int, **values):
+    with Session(bind=main_engine) as s:
+        s.execute(sa.update(tables.EvolveRequest).where(tables.EvolveRequest.id == request_id).values(**values))
+        s.commit()
+
+
+def run_request(request: dict):
+    """ Итерация поиска по запросу: этапы PHASES на MINUTES минут, сводки — в Telegram."""
+    now = datetime.now(ZoneInfo(TIMEZONE))
+    set_request(request['id'], STATUS='running', STARTED_AT=now.replace(tzinfo=None))
+    tlg.send_message(f'Геномный поиск по запросу #{request["id"]}: {request["MINUTES"]} мин., '
+                     f'до {now + timedelta(minutes=request["MINUTES"]):%H:%M}.')
+    try:
+        run_phases(now + timedelta(minutes=request['MINUTES']))
+        set_request(request['id'], STATUS='done', FINISHED_AT=datetime.now())
+    except Exception as error:
+        logger.exception(error)
+        set_request(request['id'], STATUS='failed', FINISHED_AT=datetime.now(), NOTE=str(error)[:500])
+        tlg.send_message(f'Геномный поиск #{request["id"]}: ошибка — {error}')
+
+
+def window_end(now: datetime, window: tuple) -> datetime:
+    end = now.replace(hour=window[1] // 60 % 24, minute=window[1] % 60, second=0, microsecond=0)
+    return end if end > now else end + timedelta(days=1)
+
+
+def run_daemon(days: str = EVOLVE_DAYS, spec: str = EVOLVE_WINDOWS,
+               daily_days: str = EVOLVE_DAILY_DAYS, daily_spec: str = EVOLVE_DAILY_WINDOW):
+    """ Демон: запросы из Telegram (/поиск), ежедневная часовая итерация (пн–сб 09–10) и
+    воскресные окна непрерывного поиска. Если поиск уже идёт в другом процессе — ждёт."""
     weekdays = {int(day) for day in days.split(',') if day.strip()}
     windows = parse_windows(spec)
+    daily_weekdays = {int(day) for day in daily_days.split(',') if day.strip()}
+    daily_windows = parse_windows(daily_spec)
+    last_daily = None
     evolver = None
     active = False
-    logger.info(f'Абстрактный алгоритм запущен: дни {sorted(weekdays)}, окна {spec}')
+    logger.info(f'Абстрактный алгоритм запущен: дни {sorted(weekdays)}, окна {spec}; '
+                f'ежедневно {sorted(daily_weekdays)} {daily_spec}; запросы /поиск')
     while True:
         now = datetime.now(ZoneInfo(TIMEZONE))
+        try:
+            request = pending_request()
+            if request and not search_busy():
+                run_request(request)
+                continue
+            daily = current_window(now, daily_windows) if now.weekday() in daily_weekdays else None
+            if daily and last_daily != now.date() and not search_busy():
+                last_daily = now.date()
+                tlg.send_message(f'Геномный поиск: ежедневная итерация до {window_end(now, daily):%H:%M}.')
+                run_phases(window_end(now, daily))
+                continue
+        except Exception as error:
+            logger.exception(error)
+            sleep(30)
+            continue
         window = current_window(now, windows) if now.weekday() in weekdays else None
+        if window is not None and search_busy():
+            SQLmain.save_activity(SERVICE, 'поиск идёт в другом процессе')
+            sleep(60)
+            continue
         if window is None:
             if active:  # окно закончилось — сводка сессии
                 active = False
+                release_lock()
                 try:
                     tlg.send_message(evolver.session_report())
                 except Exception as error:
                     logger.exception(error)
-            SQLmain.save_activity(SERVICE, 'ожидание окна поиска')
-            sleep(min(seconds_to_next_window(now, windows), 300))
+            SQLmain.save_activity(SERVICE, 'ожидание окна поиска или запроса /поиск')
+            sleep(60)  # раз в минуту — проверка запросов из Telegram
             continue
         try:
             if evolver is None:
@@ -357,6 +543,7 @@ def run_daemon(days: str = EVOLVE_DAYS, spec: str = EVOLVE_WINDOWS):
                 evolver.session = new_session()
                 active = True
             evolver.ensure_market()
+            touch_lock()
             until = monotonic() + 60
             while monotonic() < until:
                 evolver.step()

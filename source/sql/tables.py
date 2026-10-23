@@ -99,6 +99,21 @@ class Signal(Base):
     PRIORITY: Mapped[Optional[float]]  # приоритет стратегии (elements/pool): исполнитель входит по нему
 
 
+class EvolveRequest(Base):
+    """ Запросы на итерацию геномного поиска (команда /поиск в Telegram-боте)."""
+    __tablename__ = 'evolve_requests'
+
+    id: Mapped[intpk]
+    CREATED_AT: Mapped[datetime]
+    MINUTES: Mapped[int]
+    SOURCE: Mapped[str]  # telegram / manual
+    CHAT_ID: Mapped[Optional[int]]
+    STATUS: Mapped[str]  # new / running / done / failed
+    STARTED_AT: Mapped[Optional[datetime]]
+    FINISHED_AT: Mapped[Optional[datetime]]
+    NOTE: Mapped[Optional[str]]
+
+
 class StrategyPool(Base):
     """ Пул стратегий на день: состав и приоритет по бэктесту и исполненным сделкам."""
     __tablename__ = 'strategy_pool'
@@ -240,6 +255,12 @@ class EvolveStage(Base):
     HOLD_CAGR: Mapped[Optional[float]]  # контрольный период
     HOLD_DD: Mapped[Optional[float]]
     HOLD_TRADES: Mapped[Optional[int]]
+    # Слепая проверка (последние EVOLVE_BLIND_DAYS дней): только для сведения, в отборе не участвует.
+    BLIND_START: Mapped[Optional[date]]
+    BLIND_CAGR: Mapped[Optional[float]]
+    BLIND_RETURN: Mapped[Optional[float]]
+    BLIND_DD: Mapped[Optional[float]]
+    BLIND_TRADES: Mapped[Optional[int]]
     ACTIVE: Mapped[bool] = mapped_column(default=True)
     NOTE: Mapped[Optional[str]]
 
@@ -261,6 +282,7 @@ class EvolveRun(Base):
     H1_CAGR: Mapped[Optional[float]]
     H2_CAGR: Mapped[Optional[float]]
     HOLD_CAGR: Mapped[Optional[float]]  # только у прошедших поиск
+    BLIND_CAGR: Mapped[Optional[float]]
     IMPROVED: Mapped[bool] = mapped_column(default=False)  # лучше родителя
     STAGE_ID: Mapped[Optional[int]]
     SECONDS: Mapped[Optional[float]]
