@@ -15,7 +15,7 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 
-from elements.evolve.genome import Genome
+from elements.evolve.genome import Genome, SLOTS
 from elements.features.worker import FEATURES, trade_outcomes
 from elements.reverse.engine import simulate_entries
 from elements.selftune.blind import score_of
@@ -30,6 +30,7 @@ MARKET_FEATURES = ['idx_r1', 'idx_r5', 'idx_dist_sma50', 'breadth50', 'mkt_r1', 
 EXIT_CACHE = 96
 DERIVED_CACHE = 96  # производных рядов (изменение, z-оценка) в памяти
 NEVER = np.iinfo(np.int32).max // 2
+MIN_YEAR_DAYS = 60  # неполный год короче — не отдельный год в оценке устойчивости
 
 
 class EMarket:
@@ -64,10 +65,34 @@ class EMarket:
                                self.last - blind_days + 1)
         self.guard_end = self.blind_start - 1
         self.search_rows = (self.didx >= self.first) & (self.didx <= self.search_end)
+        # Дни, в которые разрешён вход (режим рынка): None — все дни; доля таких дней в поиске.
+        self.day_mask: np.ndarray | None = None
+        self.day_share = 1.0
         self._ranks: dict[str, np.ndarray] = {}
         self._quantiles: dict[tuple, float] = {}
         self._exits: OrderedDict = OrderedDict()
         self._derived: OrderedDict = OrderedDict()
+
+    def set_days(self, mask: np.ndarray | None):
+        """ Вход только в дни mask (по номерам дней) — геномы и пулы режима рынка."""
+        self.day_mask = mask
+        if mask is None:
+            self.day_share = 1.0
+        else:
+            part = mask[self.first:self.search_end + 1]
+            self.day_share = float(part.mean()) if len(part) else 0.0
+
+    def set_search_end(self, search_end: int, holdout_days: int = 0):
+        """ Слепой тест: поиск и квантили порогов — только по дням до search_end включительно,
+        контроль — следующие holdout_days дней (кэши исходов и рангов причинны и сохраняются)."""
+        self.search_end = search_end
+        self.hold_start = search_end + 1
+        self.guard_end = min(self.last, search_end + max(1, holdout_days))
+        self.blind_start = self.guard_end + 1
+        self.search_rows = (self.didx >= self.first) & (self.didx <= self.search_end)
+        self._quantiles = {}
+        if self.day_mask is not None:
+            self.set_days(self.day_mask)
 
     def date(self, day: int):
         return pd.Timestamp(self.dates[day]).date()
@@ -190,6 +215,8 @@ class EMarket:
         score = np.zeros(len(self.didx))
         for gene in genome.genes['score']:
             score = score + gene.evaluate(self)
+        if self.day_mask is not None:
+            mask = mask & self.day_mask[self.didx]
         rows = np.nonzero(mask & (self.didx >= self.first))[0]
         if not len(rows):
             return exit_view, []
@@ -199,6 +226,19 @@ class EMarket:
         position = np.arange(len(rows)) - np.repeat(starts, np.diff(np.r_[starts, len(rows)]))
         rows = rows[position < top]
         return exit_view, [(int(self.didx[r]), int(r), slot, float(score[r])) for r in rows]
+
+    def yearly(self, daily: np.ndarray, first: int) -> list[float]:
+        """ Доходность по календарным годам (неполный год — в пересчёте на год; короче
+        MIN_YEAR_DAYS дней не учитывается): оценка устойчивости, а не одного удачного года."""
+        years = pd.DatetimeIndex(self.dates[first:first + len(daily)]).year.to_numpy()
+        result = []
+        for year in np.unique(years):
+            part = daily[years == year]
+            if len(part) < MIN_YEAR_DAYS:
+                continue
+            total = float(np.prod(1.0 + part))
+            result.append(total ** (252 / len(part)) - 1 if total > 0 else -1.0)
+        return result
 
     def evaluate(self, genome: Genome, holdout: bool = False) -> dict:
         """ Оценка на периоде поиска (весь и две половины), по запросу — на контрольном."""
@@ -212,6 +252,9 @@ class EMarket:
         ]
         parts = [{**stats, 'SCORE': score_of(stats)} for stats in parts]
         result = {'stats': parts[0], 'halves': parts[1:], 'signals': len(picks), 'daily': search['daily'],
+                  'day_share': self.day_share,
+                  'years': self.yearly(search['daily'], self.first),
+                  'extra_genes': genome.size - sum(low for low, _ in SLOTS.values()),
                   'search_start': self.date(self.first), 'search_end': self.date(self.search_end),
                   'holdout_start': self.date(self.hold_start), 'blind_start': self.date(self.blind_start),
                   'data_end': self.date(self.last)}

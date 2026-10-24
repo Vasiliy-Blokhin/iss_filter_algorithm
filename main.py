@@ -21,6 +21,12 @@
                                  --until 02:00 — этапы PHASES (новые гены, смешанный,
                                  доработка этапов) до 02:00 со сводкой после каждого
     python main.py stages      — зафиксированные этапы абстрактного алгоритма
+    python main.py regime      — режим рынка сейчас (и история в таблице market_regime)
+    python main.py pools       — пересобрать пулы стратегий по режимам рынка
+    python main.py blind-full  — полностью слепой тест всей системы по периодам 1 мес. … 5 лет
+                                 (--no-ga — без генетики, --periods 1y,5y — свои периоды)
+    python main.py tasks       — демон задач из Telegram (кнопки «Запуск», iss_tasks)
+    evolve --minutes N [--regimes] — поиск N минут: общий или общий + каждый режим рынка
 """
 import argparse
 import json
@@ -60,7 +66,8 @@ def run_signals(use_ai: bool = True):
     selection = Algorithm.run_sql_command(
         'SELECT * FROM strategy_selection ORDER BY "DATE" DESC LIMIT 1'
     )
-    header = f'Стратегия: {selection[0]["REASON"]}\n\n' if selection else ''
+    header = f'{Algorithm.regime_text}\n\n' if Algorithm.regime_text else \
+        (f'Стратегия: {selection[0]["REASON"]}\n\n' if selection else '')
     tlg.send_message(header + signals_message(signals))
     return signals
 
@@ -137,9 +144,28 @@ def daemon():
         sleep(LOOP_SLEEP)
 
 
+def rotation_cap() -> tuple[float, bool]:
+    """ Доля акций ротации: по режиму рынка, если слепой тест включил это (regime_switch),
+    иначе прежняя постоянная. Второе значение — режим сменился сегодня (пересчитать цель сразу)."""
+    from elements.selftune.params import load_active
+    from source.settings.settings import ROTATION_EQ_CAP, REGIME_ENABLED
+    if not (REGIME_ENABLED and load_active('regime_switch').get('rotation')):
+        return ROTATION_EQ_CAP, False
+    import pandas as pd
+    from elements.rotation.worker import select_caps
+    rows = Algorithm.run_sql_command('SELECT "DATE", REGIME FROM market_regime ORDER BY "DATE"')
+    if not rows:
+        return ROTATION_EQ_CAP, False
+    regimes = pd.Series([r['REGIME'] for r in rows], index=pd.to_datetime([r['DATE'] for r in rows]))
+    caps = select_caps(Rotation.load_prices(), regimes, regimes.index[-1])
+    changed = len(regimes) > 1 and regimes.iloc[-1] != regimes.iloc[-2]
+    return caps[regimes.iloc[-1]], changed
+
+
 def run_rotation(today=None):
     Rotation.update_indexes()
-    result = Rotation.update_target(today)
+    cap, changed = rotation_cap()
+    result = Rotation.update_target(today, cap, now=changed)
     if result:
         tlg.send_message(
             f'Ротация на месяц (данные на {result["date"]}): '
@@ -198,8 +224,14 @@ def show_reverse():
         logger.info(f'{row["DATE"]} {row["KIND"]}: {row["TEXT"]}')
 
 
-def run_evolve(steps: int, until: str = ''):
-    from elements.evolve.worker import Evolver, run_daemon as run_evolve_daemon, run_phases, search_busy
+def run_evolve(steps: int, until: str = '', minutes: int = 0, regimes: bool = False):
+    from elements.evolve.worker import Evolver, run_daemon as run_evolve_daemon, run_phases, run_groups, search_busy
+    if minutes:
+        if search_busy():
+            say('Геномный поиск уже идёт — запуск отменён.')
+            return
+        run_groups(msk_now() + timedelta(minutes=minutes), None if regimes else [''])
+        return
     if until:
         if search_busy():
             logger.warning('Геномный поиск уже идёт в другом процессе (data/evolve.lock) — запуск отменён.')
@@ -239,6 +271,51 @@ def show_stages():
         )
 
 
+def say(text: str):
+    """ Короткий итог для бота: строки с ИТОГ: демон задач пересылает в Telegram."""
+    for line in text.splitlines():
+        print(f'ИТОГ: {line}', flush=True)
+
+
+def regime_panel():
+    from elements.regime.worker import MarketRegime
+    apply_active_strategy_params()
+    panel = Algorithm.build_panel(Algorithm.complete_candles())
+    return panel, MarketRegime.history(panel)
+
+
+def show_regime():
+    from elements.regime.worker import MarketRegime
+    panel, _ = regime_panel()
+    say(MarketRegime.update(panel)['text'])
+
+
+def run_pools():
+    from elements.regime.pools import RegimePools, pools_text
+    panel, history = regime_panel()
+    say('Пулы стратегий по режимам:\n' + pools_text(RegimePools.rebuild(panel, history, notify=False)))
+
+
+def run_blind_full(no_ga: bool, periods: str):
+    from elements.regime.blind import FullBlind, summary_lines, decide_switches
+    from elements.selftune.params import save_active
+    from source.settings.settings import BLIND_PERIODS, BLIND_GA_STEPS
+    panel, history = regime_panel()
+    blind = FullBlind(panel, history, ga_steps=0 if no_ga else BLIND_GA_STEPS, periods=periods or BLIND_PERIODS)
+    result = blind.run(progress=lambda done, total: Algorithm.save_activity(
+        'blind_full', f'переобучение {done}/{total}'))
+    Algorithm.save_activity('blind_full', 'готово')
+    switches, note = decide_switches(result)
+    blind.save(result, note=('без генетики; ' if no_ga else '') + note)
+    save_active('regime_switch', switches, data_end=result['periods'][0]['END'], note=note)
+    longest = result['periods'][-1]
+    say('Слепой тест (счёт 50 тыс. ₽, комиссии АЛОР, лоты' + (', без генетики' if no_ga else '') + '):\n'
+        + '\n'.join(summary_lines(result))
+        + f'\nКраткосрочные сделки за {longest["PERIOD"]}: {longest["SHORT_RETURN"]:+.1%} '
+        f'({longest["SHORT_TRADES"]} сд.), ротация {longest["ROTATION_RETURN"]:+.1%} '
+        f'(прежняя {longest["OLD_ROTATION_RETURN"]:+.1%}).\nРешение: {note}.')
+
+
 def show_statistic():
     rows = Algorithm.run_sql_command(
         'SELECT * FROM backtest_runs ORDER BY id DESC LIMIT 10'
@@ -272,8 +349,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('command', choices=[
         'update', 'backtest', 'signals', 'statistic', 'stats', 'run', 'selftune', 'blind', 'rotation',
-        'news', 'reverse', 'reverse-daemon', 'evolve', 'stages',
+        'news', 'reverse', 'reverse-daemon', 'evolve', 'stages', 'regime', 'pools', 'blind-full', 'tasks',
     ])
+    parser.add_argument('--minutes', type=int, default=0, help='evolve: поиск N минут')
+    parser.add_argument('--regimes', action='store_true', help='evolve: общий + каждый режим рынка')
+    parser.add_argument('--no-ga', dest='no_ga', action='store_true', help='blind-full: без генетики')
+    parser.add_argument('--periods', default='', help='blind-full: периоды, например 1m,1y,5y')
     parser.add_argument('--steps', type=int, default=0, help='evolve: выполнить N шагов сразу')
     parser.add_argument('--until', default='', help='evolve: поэтапный прогон до ЧЧ:ММ МСК (PHASES)')
     parser.add_argument('--no-ai', action='store_true', help='не вызывать AI_Manager')
@@ -320,7 +401,16 @@ if __name__ == '__main__':
         from elements.reverse.daemon import run_daemon as run_reverse_daemon
         run_reverse_daemon()
     elif args.command == 'evolve':
-        run_evolve(args.steps, args.until)
+        run_evolve(args.steps, args.until, args.minutes, args.regimes)
+    elif args.command == 'regime':
+        show_regime()
+    elif args.command == 'pools':
+        run_pools()
+    elif args.command == 'blind-full':
+        run_blind_full(args.no_ga, args.periods)
+    elif args.command == 'tasks':
+        from elements.tasks.worker import run_daemon as run_tasks_daemon
+        run_tasks_daemon()
     elif args.command == 'stages':
         show_stages()
     else:

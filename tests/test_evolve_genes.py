@@ -127,7 +127,7 @@ def test_fitness_rewards_more_trades():
     from datetime import date
     from elements.evolve import worker
     def result(trades):
-        stats = {'SCORE': 0.3, 'TRADES': trades}
+        stats = {'SCORE': 0.3, 'CAGR': 0.3, 'TRADES': trades}
         return {'stats': stats, 'halves': [{'CAGR': 0.1}, {'CAGR': 0.1}],
                 'search_start': date(2020, 1, 1), 'search_end': date(2024, 1, 1)}
     target = worker.target_trades(result(0))

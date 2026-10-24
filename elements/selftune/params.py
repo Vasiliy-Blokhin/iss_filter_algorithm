@@ -112,6 +112,9 @@ DEFAULTS = {
     'strategy': DEFAULT_PARAMS, 'correction': DEFAULT_CORRECTION, 'tuner': DEFAULT_TUNER,
     # Реверсивный алгоритм: собственный пул параметров и состояние жизненного цикла.
     'reverse': DEFAULT_REVERSE, 'reverse_state': {},
+    # Переключатели по итогам полностью слепого теста (elements/regime/blind): доля акций ротации
+    # по режиму (иначе прежняя постоянная) и краткосрочная часть в live (paper торгует всегда).
+    'regime_switch': {'rotation': False, 'short': True},
 }
 
 
