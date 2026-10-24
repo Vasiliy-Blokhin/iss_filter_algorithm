@@ -22,6 +22,7 @@ from source.settings.settings import (
     EVOLVE_SIGNALS,
     HOLD_DAYS,
     PRIORITY_ENABLED,
+    REGIME_ENABLED,
     REVERSE_ENABLED,
     REVERSE_REVIEW,
     STOP_ATR,
@@ -38,6 +39,7 @@ logger.addHandler(handler)
 
 
 class Algorithm(SQLmain):
+    regime_text = ''  # строка о режиме и пуле для сообщения о сигналах
 
     @classmethod
     def complete_candles(cls) -> pd.DataFrame:
@@ -69,6 +71,11 @@ class Algorithm(SQLmain):
 
         # Доли капитала по стратегиям (adaptive, equal, diversify или best — ALLOCATION_MODE).
         allocation, stats = StrategySelector.select_strategy(panel)
+        stage_ids = None
+        if REGIME_ENABLED:
+            regime_allocation, stage_ids = cls.regime_pool(panel)
+            if regime_allocation is not None:
+                allocation = regime_allocation
         unit = StrategySelector.position_unit()
         rows = panel[panel['DATE'] == last_date]
         merged: dict[str, dict] = {}
@@ -84,8 +91,8 @@ class Algorithm(SQLmain):
                 merged[row['SECID']] = cls.make_signal(row, securities, sectors, last_date, strategy, weight)
         if REVERSE_ENABLED:
             cls.add_reverse(panel, merged, securities, sectors, last_date)
-        if EVOLVE_SIGNALS:
-            cls.add_evolve(panel, merged, securities, sectors, last_date)
+        if EVOLVE_SIGNALS and stage_ids != []:
+            cls.add_evolve(panel, merged, securities, sectors, last_date, stage_ids)
         cls.apply_priority(merged, last_date)
         logger.info(f'Сигналов на {last_date.date()}: {len(merged)} ({list(merged)})')
 
@@ -134,13 +141,34 @@ class Algorithm(SQLmain):
             merged[row['SECID']] = signal
 
     @classmethod
-    def add_evolve(cls, panel, merged, securities, sectors, last_date):
+    def regime_pool(cls, panel) -> tuple[dict | None, list[int] | None]:
+        """ Режим рынка и его пул: доли правиловых стратегий пула (поровну) и этапы геномного пула.
+        Пул пересобирается каждый день; пустой пул — краткосрочных сигналов нет (только фонды)."""
+        from elements.regime.pools import RegimePools, strategy_label
+        from elements.regime.worker import MarketRegime
+        try:
+            state = MarketRegime.update(panel)
+            pools = RegimePools.rebuild(panel, MarketRegime.history(panel), notify=False)
+        except Exception as error:
+            logger.exception(f'Режим рынка: {error}')
+            return None, None
+        members = pools.get(state['regime'], [])
+        rules = [strategy_label(m['STRATEGY']) for m in members if m['STRATEGY'].startswith('rule:')]
+        stage_ids = [int(m['STRATEGY'].rsplit(':', 1)[1]) for m in members if m['STRATEGY'].startswith('gen:')]
+        cls.regime_text = (f'{state["emoji"]} Режим: {state["title"]}. Пул: '
+                           + (', '.join(strategy_label(m['STRATEGY']) for m in members) or 'пусто — только фонды')
+                           + '.')
+        logger.info(cls.regime_text)
+        return {name: 1 / len(rules) for name in rules}, stage_ids
+
+    @classmethod
+    def add_evolve(cls, panel, merged, securities, sectors, last_date, stage_ids=None):
         """ Сигналы лучших этапов абстрактного алгоритма со своим правилом выхода.
         Бумагу, уже выбранную другой стратегией, не трогаем (у неё другой выход);
         исполнитель берёт сигналы evolve только в paper-режиме."""
         from elements.evolve.live import stage_signals
         try:
-            picks = stage_signals(panel)
+            picks = stage_signals(panel, ids=stage_ids)
         except Exception as error:
             logger.exception(f'Абстрактный алгоритм: {error}')
             return

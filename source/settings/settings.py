@@ -133,6 +133,18 @@ EVOLVE_MIN_TRADES = env_int('EVOLVE_MIN_TRADES', 60)
 EVOLVE_TARGET_TRADES = env_int('EVOLVE_TARGET_TRADES', 250)
 EVOLVE_ACTIVITY_PENALTY = env_float('EVOLVE_ACTIVITY_PENALTY', 1.0)
 EVOLVE_POOL = env_int('EVOLVE_POOL', 40)
+# Устойчивость (2026-10-24, обзор практик ГА): оценка по календарным годам периода поиска —
+# средний год без лучшего + EVOLVE_WORST_YEAR × худший год (если он в минусе); доля годов
+# в плюсе не ниже EVOLVE_MIN_POS_YEARS; штраф EVOLVE_PARSIMONY за каждый ген сверх минимума.
+EVOLVE_WORST_YEAR = env_float('EVOLVE_WORST_YEAR', 0.5)
+EVOLVE_MIN_POS_YEARS = env_float('EVOLVE_MIN_POS_YEARS', 0.7)
+EVOLVE_PARSIMONY = env_float('EVOLVE_PARSIMONY', 0.003)
+# Перед фиксацией: EVOLVE_NEIGHBORS соседей (сдвиг одного параметра); медиана их оценки —
+# не ниже EVOLVE_NEIGHBOR_SHARE × оценки кандидата (плато, а не пик подгонки).
+EVOLVE_NEIGHBORS = env_int('EVOLVE_NEIGHBORS', 6)
+EVOLVE_NEIGHBOR_SHARE = env_float('EVOLVE_NEIGHBOR_SHARE', 0.5)
+# Deflated Sharpe (поправка на число испытаний) на периоде поиска: не ниже EVOLVE_MIN_DSR.
+EVOLVE_MIN_DSR = env_float('EVOLVE_MIN_DSR', 0.3)
 EVOLVE_SIMILAR = env_float('EVOLVE_SIMILAR', 0.7)  # корреляция с этапом, выше — это его вариант
 # Сигналы лучших действующих этапов (STRATEGY = 'evolve:<id>'); исполнитель берёт их только в paper.
 # Доля капитала позиции = доля из гена size × EVOLVE_LIVE_SHARE / число этапов.
@@ -225,3 +237,25 @@ LOOP_SLEEP = env_int('LOOP_SLEEP', 60)
 TELEGRAM_TOKEN = getenv('TLG_REPORT_TOKEN') or ''
 TELEGRAM_CHAT_ID = getenv('TLG_REPORT_CHAT_ID') or ''
 START_MESSAGE = '---Project: iss_filter_algorithm---\n'
+
+# Режимы рынка (elements/regime): определение по IMOEX и ширине рынка, пулы стратегий
+# под каждый режим, полностью слепой тест всей системы. REGIME_ENABLED — сигналы и ротация
+# учитывают режим (доля акций ротации — eq_cap режима, краткосрочные — только пул режима).
+REGIME_ENABLED = env_bool('REGIME_ENABLED', True)
+REGIME_CONFIRM_DAYS = env_int('REGIME_CONFIRM_DAYS', 3)
+REGIME_POOL_SIZE = env_int('REGIME_POOL_SIZE', 3)       # стратегий в пуле режима
+REGIME_MIN_TRADES = env_int('REGIME_MIN_TRADES', 20)    # сделок в днях режима для попадания в пул
+# Слепой тест: периоды до текущего торгового дня, переобучение (пулы и генетика) каждые
+# BLIND_REFIT_DAYS торговых дней только по прошлым данным, шагов генетики на режим за переобучение.
+BLIND_PERIODS = getenv('BLIND_PERIODS') or '1m,6m,1y,2y,3y,4y,5y'
+BLIND_REFIT_DAYS = env_int('BLIND_REFIT_DAYS', 63)
+BLIND_GA_STEPS = env_int('BLIND_GA_STEPS', 60)
+BLIND_CAPITAL = env_float('BLIND_CAPITAL', 50_000)
+MAX_ENTRY_GAP = env_float('MAX_ENTRY_GAP', 0.02)  # как у исполнителя: не входить при гэпе > 2%
+ROTATION_SHARE = env_float('ROTATION_SHARE', 0.9)  # как у исполнителя
+TAX_RATE = env_float('TAX_RATE', 0.13)              # НДФЛ с положительного годового результата
+# Генетика: в каждой пачке из EVOLVE_BATCH шагов не меньше EVOLVE_FRESH_MIN полностью новых геномов.
+EVOLVE_BATCH = env_int('EVOLVE_BATCH', 10)
+EVOLVE_FRESH_MIN = env_int('EVOLVE_FRESH_MIN', 2)
+# Задачи из Telegram (elements/tasks, демон `main.py tasks`): опрос очереди, секунд.
+TASKS_POLL = env_int('TASKS_POLL', 20)

@@ -118,7 +118,7 @@ def test_stage_signals_carry_own_exit(candles, market, monkeypatch):
     assert all(p['ROW']['DATE'] == panel['DATE'].max() for p in picks)
     assert all(p['HOLD'] == 4 and p['AT_OPEN'] and p['STOP'] == 2.5 for p in picks)
 
-    monkeypatch.setattr('elements.evolve.live.stage_signals', lambda panel: picks)
+    monkeypatch.setattr('elements.evolve.live.stage_signals', lambda panel, **kwargs: picks)
     merged = {}
     securities = pd.DataFrame({'SECID': [], 'SHORTNAME': []}).set_index('SECID')
     Algorithm.add_evolve(panel, merged, securities, {}, panel['DATE'].max())

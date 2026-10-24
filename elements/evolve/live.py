@@ -20,13 +20,23 @@ logger.addHandler(handler)
 
 
 def best_stages(limit: int = EVOLVE_LIVE_STAGES) -> list[dict]:
+    """ Лучшие действующие общие этапы (без режима) — по основной метрике PERIOD_SCORE."""
     return SQLmain.run_sql_command(
-        'SELECT * FROM evolve_stages WHERE ACTIVE ORDER BY SCORE DESC LIMIT :limit', {'limit': limit})
+        "SELECT * FROM evolve_stages WHERE ACTIVE AND COALESCE(REGIME, '') = '' "
+        'ORDER BY PERIOD_SCORE IS NULL, PERIOD_SCORE DESC, SCORE DESC LIMIT :limit', {'limit': limit})
 
 
-def stage_signals(panel: pd.DataFrame, limit: int = EVOLVE_LIVE_STAGES) -> list[dict]:
-    """ Бумаги последнего дня панели, выбранные этапами: строка панели, вес и правило выхода."""
-    stages = best_stages(limit)
+def stages_by_id(ids: list[int]) -> list[dict]:
+    if not ids:
+        return []
+    marks = ', '.join(str(int(i)) for i in ids)
+    return SQLmain.run_sql_command(f'SELECT * FROM evolve_stages WHERE id IN ({marks})')
+
+
+def stage_signals(panel: pd.DataFrame, limit: int = EVOLVE_LIVE_STAGES, ids: list[int] | None = None) -> list[dict]:
+    """ Бумаги последнего дня панели, выбранные этапами: строка панели, вес и правило выхода.
+    ids — этапы из пула текущего режима рынка (иначе лучшие общие)."""
+    stages = stages_by_id(ids) if ids is not None else best_stages(limit)
     if not stages:
         return []
     market = EMarket(panel)

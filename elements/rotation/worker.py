@@ -85,13 +85,15 @@ class Rotation(SQLmain):
 
     # --- решение --------------------------------------------------------------
     @classmethod
-    def update_target(cls, today: date | None = None) -> dict | None:
-        """ Целевые доли на текущий месяц по данным на последний торговый день прошлого месяца.
+    def update_target(cls, today: date | None = None, eq_cap: float = ROTATION_EQ_CAP,
+                      now: bool = False) -> dict | None:
+        """ Целевые доли на текущий месяц по данным на последний торговый день прошлого месяца
+        (now — по последним данным: смена режима рынка внутри месяца); eq_cap — доля акций.
         Возвращает новую цель или None, если она уже рассчитана (или нет данных)."""
         today = today or date.today()
         prices = cls.load_prices()
         month_start = pd.Timestamp(today.replace(day=1))
-        history = prices[prices.index < month_start]
+        history = prices if now else prices[prices.index < month_start]
         if len(history) < max(ROTATION_LOOKBACKS) + 1:
             logger.warning('Ротация: мало истории индексов')
             return None
@@ -101,10 +103,10 @@ class Rotation(SQLmain):
         )[0]['n']
         if exists:
             return None
-        weights, scores = target_weights(history)
+        weights, scores = target_weights(history, eq_cap)
         reason = 'оценки (средний рост за {} дн.): '.format('/'.join(map(str, ROTATION_LOOKBACKS))) + \
             ', '.join(f'{asset} {score:+.2%}' for asset, score in scores.items()) + \
-            f'; доля акций не больше {ROTATION_EQ_CAP:.0%}'
+            f'; доля акций не больше {eq_cap:.0%}'
         rows = [{
             'DATE': decision, 'ASSET': asset, 'SECID': ROTATION_ASSETS[asset][1],
             'WEIGHT': float(weight), 'REASON': reason, 'CREATED_AT': datetime.now(),
@@ -133,8 +135,8 @@ def prices_from_indexes(wide: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame({'EQ': wide[eq_index], 'BOND': wide[bond_index], 'CASH': cash}).dropna()
 
 
-def target_weights(history: pd.DataFrame) -> tuple[dict, dict]:
-    """ Доли по истории цен до дня решения включительно."""
+def target_weights(history: pd.DataFrame, eq_cap: float = ROTATION_EQ_CAP) -> tuple[dict, dict]:
+    """ Доли по истории цен до дня решения включительно; eq_cap — доля акций (по режиму рынка)."""
     scores = {
         asset: float(np.mean([history[asset].iloc[-1] / history[asset].iloc[-1 - lb] - 1
                               for lb in ROTATION_LOOKBACKS]))
@@ -146,8 +148,69 @@ def target_weights(history: pd.DataFrame) -> tuple[dict, dict]:
     weights = {asset: 0.0 for asset in ASSETS}
     weights[best] = 1.0
     if best == 'EQ':
-        weights['EQ'], weights['CASH'] = ROTATION_EQ_CAP, 1 - ROTATION_EQ_CAP
+        weights['EQ'], weights['CASH'] = eq_cap, 1 - eq_cap
     return weights, scores
+
+
+CAP_GRID = (0.0, 0.3, 0.5, 0.7, 0.9, 1.0)
+
+
+def eq_signal(prices: pd.DataFrame) -> pd.Series:
+    """ Дни, когда ротация держит акции (решение в последний день месяца, действует со следующего)."""
+    month = prices.index.to_period('M')
+    last_day = (prices.index.to_series().groupby(month).transform('max') == prices.index.to_series()).to_numpy()
+    signal = pd.Series(np.nan, index=prices.index)
+    for number in np.nonzero(last_day)[0]:
+        if number > max(ROTATION_LOOKBACKS):
+            signal.iloc[number] = float(target_weights(prices.iloc[:number + 1], 1.0)[0]['EQ'] > 0)
+    return signal.ffill().fillna(0).shift(1).fillna(0).astype(bool)
+
+
+def select_caps(prices: pd.DataFrame, regimes: pd.Series, end, signal: pd.Series | None = None,
+                default: float = ROTATION_EQ_CAP) -> dict[str, float]:
+    """ Доля акций для каждого режима по прошлым дням до end включительно: из CAP_GRID — с наибольшим
+    ростом капитала с учётом риска (годовая средняя − половина годовой дисперсии) в дни режима,
+    когда ротация держала акции. Мало дней (< 40) — прежняя постоянная доля."""
+    from elements.regime.detector import REGIME_KEYS
+    signal = eq_signal(prices) if signal is None else signal
+    returns = prices.pct_change().fillna(0)
+    regimes = regimes.reindex(prices.index).ffill().fillna('neutral').shift(1).fillna('neutral')
+    past = prices.index <= pd.Timestamp(end)
+    caps = {}
+    for key in REGIME_KEYS:
+        days = past & signal.to_numpy() & (regimes == key).to_numpy()
+        if days.sum() < 40:
+            caps[key] = default
+            continue
+        eq, cash = returns['EQ'].to_numpy()[days], returns['CASH'].to_numpy()[days]
+        utility = {cap: 252 * np.mean(cap * eq + (1 - cap) * cash) - 0.5 * 252 * np.var(cap * eq + (1 - cap) * cash)
+                   for cap in CAP_GRID}
+        caps[key] = max(utility, key=utility.get)
+    return caps
+
+
+def regime_daily(prices: pd.DataFrame, regimes: pd.Series, cap_of=None) -> pd.Series:
+    """ Дневная доходность ротации с долей акций по режиму рынка: решение в последний торговый
+    день месяца, а при смене режима — сразу (новая доля со следующего дня).
+    cap_of(дата, режим) -> доля акций; None — прежняя постоянная ROTATION_EQ_CAP без учёта режима."""
+    returns = prices.pct_change().fillna(0)
+    regimes = regimes.reindex(prices.index).ffill().fillna('neutral')
+    month = prices.index.to_period('M')
+    last_day = (prices.index.to_series().groupby(month).transform('max') == prices.index.to_series()).to_numpy()
+    weights = pd.DataFrame(np.nan, index=prices.index, columns=ASSETS)
+    previous = None
+    for number, day in enumerate(prices.index):
+        regime = regimes.iloc[number]
+        changed = cap_of is not None and previous is not None and regime != previous
+        previous = regime
+        if not (last_day[number] or changed) or number <= max(ROTATION_LOOKBACKS):
+            continue
+        cap = cap_of(day, regime) if cap_of is not None else ROTATION_EQ_CAP
+        weights.loc[day] = pd.Series(target_weights(prices.iloc[:number + 1], cap)[0])
+    weights = weights.ffill().fillna(0).shift(1).fillna(0)
+    turnover = weights.diff().abs().sum(axis=1).fillna(0)
+    fees = (weights['EQ'] + weights['BOND']) * ROTATION_FUND_FEE / 252
+    return (weights * returns).sum(axis=1) - turnover * ROTATION_COST - fees
 
 
 def backtest(prices: pd.DataFrame, start: str = '2021-01-01') -> dict:

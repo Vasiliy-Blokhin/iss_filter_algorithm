@@ -263,6 +263,12 @@ class EvolveStage(Base):
     BLIND_TRADES: Mapped[Optional[int]]
     ACTIVE: Mapped[bool] = mapped_column(default=True)
     NOTE: Mapped[Optional[str]]
+    # Режим рынка этапа ('' или NULL — общий, иначе ключ из elements/regime/detector.REGIMES).
+    REGIME: Mapped[Optional[str]]
+    # Реалистичная статистика по периодам до текущего дня (1м..5л, JSON) и оценка по ней —
+    # основная метрика отбора этапов (порядок топа).
+    PERIODS: Mapped[Optional[str]]
+    PERIOD_SCORE: Mapped[Optional[float]]
 
 
 class EvolveRun(Base):
@@ -274,6 +280,7 @@ class EvolveRun(Base):
     OPERATOR: Mapped[str]
     SEED: Mapped[int]
     PARENT: Mapped[Optional[str]]  # 'stage:<id>' / 'pool' / None
+    REGIME: Mapped[Optional[str]]
     GENOME: Mapped[str]
     CAGR: Mapped[Optional[float]]
     MAX_DRAWDOWN: Mapped[Optional[float]]
@@ -398,3 +405,74 @@ class ReversePick(Base):
     SCORE: Mapped[float]
     RULES: Mapped[Optional[str]]
     REAL: Mapped[bool] = mapped_column(default=False)
+
+
+class MarketRegime(Base):
+    """ Режим рынка по дням (elements/regime): сводная оценка, сырой и подтверждённый режим."""
+    __tablename__ = 'market_regime'
+    __table_args__ = (UniqueConstraint('DATE'),)
+
+    id: Mapped[intpk]
+    DATE: Mapped[date] = mapped_column(index=True)
+    SCORE: Mapped[Optional[float]]
+    RAW: Mapped[str]
+    REGIME: Mapped[str]
+    COMPONENTS: Mapped[Optional[str]]  # JSON признаков
+    CREATED_AT: Mapped[datetime]
+
+
+class RegimePool(Base):
+    """ Пул стратегий режима: проверка только на днях этого режима."""
+    __tablename__ = 'regime_pools'
+
+    id: Mapped[intpk]
+    CREATED_AT: Mapped[datetime]
+    DATA_END: Mapped[date]
+    REGIME: Mapped[str] = mapped_column(index=True)
+    STRATEGY: Mapped[str]
+    RANK: Mapped[int]
+    TRADES: Mapped[int]
+    AVG_TRADE: Mapped[Optional[float]]
+    WIN_RATE: Mapped[Optional[float]]
+    RETURN: Mapped[Optional[float]]  # суммарный вклад сделок в днях режима, доля капитала
+    SCORE: Mapped[Optional[float]]
+    ACTIVE: Mapped[bool]
+
+
+class BlindRun(Base):
+    """ Полностью слепой тест всей системы: итог по каждому периоду до текущего торгового дня."""
+    __tablename__ = 'blind_runs'
+
+    id: Mapped[intpk]
+    CREATED_AT: Mapped[datetime]
+    RUN_KEY: Mapped[str] = mapped_column(index=True)
+    PERIOD: Mapped[str]
+    START: Mapped[date]
+    END: Mapped[date]
+    TOTAL_RETURN: Mapped[float]
+    CAGR: Mapped[float]
+    AFTER_TAX: Mapped[Optional[float]]
+    MAX_DRAWDOWN: Mapped[float]
+    SHARPE: Mapped[float]
+    TRADES: Mapped[int]
+    WIN_RATE: Mapped[Optional[float]]
+    FEES: Mapped[Optional[float]]  # комиссии и проскальзывание, руб.
+    BENCH_RETURN: Mapped[Optional[float]]  # IMOEX за тот же период
+    CASH_RETURN: Mapped[Optional[float]]   # фонд денежного рынка за тот же период
+    REGIMES: Mapped[Optional[str]]  # JSON: доля дней каждого режима
+    NOTE: Mapped[Optional[str]]
+
+
+class TaskRequest(Base):
+    """ Задачи из Telegram-бота (кнопки «Запуск»): выполняет демон `main.py tasks`."""
+    __tablename__ = 'task_requests'
+
+    id: Mapped[intpk]
+    CREATED_AT: Mapped[datetime]
+    KIND: Mapped[str]
+    ARGS: Mapped[Optional[str]]
+    CHAT_ID: Mapped[Optional[int]]
+    STATUS: Mapped[str]  # new / running / done / failed
+    STARTED_AT: Mapped[Optional[datetime]]
+    FINISHED_AT: Mapped[Optional[datetime]]
+    RESULT: Mapped[Optional[str]]
