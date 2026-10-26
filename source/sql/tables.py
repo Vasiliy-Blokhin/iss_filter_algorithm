@@ -318,6 +318,22 @@ class IndexCandle(Base):
     CLOSE: Mapped[float]
 
 
+class DividendOverlay(Base):
+    """ Дивидендный разгон: какие бумаги держать вместо части фонда акций ротации.
+    Набор на день DATE (данные по закрытию DATE, исполнение — следующим утром); SHARE — доля
+    от веса фонда акций. Пустой набор — строка SECID='-'. После LAST_CUM бумага не держится."""
+    __tablename__ = 'dividend_overlay'
+    __table_args__ = (UniqueConstraint('DATE', 'SECID'),)
+
+    id: Mapped[intpk]
+    DATE: Mapped[date] = mapped_column(index=True)
+    SECID: Mapped[str]
+    SHARE: Mapped[float]
+    LAST_CUM: Mapped[Optional[date]]
+    YIELD: Mapped[Optional[float]]
+    CREATED_AT: Mapped[datetime]
+
+
 class AllocationTarget(Base):
     """ Целевые доли ротации на месяц (читает исполнитель: доля от капитала ротации)."""
     __tablename__ = 'allocation_targets'

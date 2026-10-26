@@ -21,7 +21,7 @@ TASKS = {  # kind: (title, list of args to `python main.py`, timeout seconds)
     'evolve': ('Геномный поиск, 1 ч', ['evolve', '--minutes', '60'], 2 * 3600),
     'evolve_regimes': ('Геномный поиск по режимам, 1 ч', ['evolve', '--minutes', '60', '--regimes'], 2 * 3600),
     'blind': ('Слепой тест 1 мес. – 5 лет', ['blind-full'], 4 * 3600),
-    'blind_fast': ('Слепой тест без генетики', ['blind-full', '--no-ga'], 3600),
+    'blind_fast': ('Слепой тест без генетики по акциям', ['blind-full', '--no-ga'], 3600),
     'pools': ('Пересборка пулов по режимам', ['pools'], 3600),
     'regime': ('Режим рынка', ['regime'], 600),
     'backtest': ('Бэктест стратегий', ['backtest'], 3600),

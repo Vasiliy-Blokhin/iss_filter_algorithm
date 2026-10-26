@@ -19,7 +19,15 @@ class MarketRegime(SQLmain):
     @classmethod
     def history(cls, panel: pd.DataFrame, candles: pd.DataFrame | None = None) -> pd.DataFrame:
         candles = candles if candles is not None else cls.load_candles()
-        index = candles[candles['SECID'] == INDEX_SECID][['DATE', 'CLOSE']]
+        index = candles[candles['SECID'] == INDEX_SECID][['DATE', 'CLOSE']].copy()
+        index['DATE'] = pd.to_datetime(index['DATE'])
+        # длинная история индекса (с 2007, elements/regime/assets) — режимы для обучения распределения
+        older = pd.DataFrame(cls.run_sql_command(
+            'SELECT "DATE", CLOSE FROM index_candles WHERE SECID = :s AND "DATE" < :d',
+            {'s': INDEX_SECID, 'd': index['DATE'].min().date()})) if len(index) else pd.DataFrame()
+        if len(older):
+            older['DATE'] = pd.to_datetime(older['DATE'])
+            index = pd.concat([older, index], ignore_index=True)
         return regime_series(index, breadth_from_panel(panel), REGIME_CONFIRM_DAYS)
 
     @classmethod
