@@ -16,7 +16,8 @@
                                  (--blind — слепой прогон с нуля, --reflect — разбор опыта ИИ)
     python main.py reverse-daemon — демон новостей и ночного разбора опыта (iss_reverse)
     python main.py evolve      — демон абстрактного алгоритма: случайный рекурсивный поиск геномов
-                                 в окнах EVOLVE_WINDOWS по дням EVOLVE_DAYS (iss_evolve);
+                                 в окнах EVOLVE_WINDOWS по дням EVOLVE_DAYS (iss_evolve),
+                                 ежедневно EVOLVE_REGIME_WINDOW (05:00–06:50) — только по режимам;
                                  --steps N — сразу N шагов без ожидания окна;
                                  --until 02:00 — этапы PHASES (новые гены, смешанный,
                                  доработка этапов) до 02:00 со сводкой после каждого
@@ -164,6 +165,20 @@ def rotation_cap() -> tuple[float, bool]:
 
 def run_rotation(today=None):
     Rotation.update_indexes()
+    from elements.selftune.params import load_active
+    from source.settings.settings import REGIME_ENABLED
+    if REGIME_ENABLED and load_active('regime_switch').get('rotation'):
+        # слепой тест включил режимное распределение фондов вместо прежней ротации
+        from elements.regime import assets
+        from elements.regime.allocation import update_live_target
+        assets.update()
+        result = update_live_target(today)
+        if result:
+            tlg.send_message('Режимное распределение (данные на {}): '.format(result['date'])
+                             + ', '.join(f'{secid} {weight:.0%}' for secid, weight in result['target'].items())
+                             + '\n' + result['reason'])
+        run_dividend()
+        return result
     cap, changed = rotation_cap()
     result = Rotation.update_target(today, cap, now=changed)
     if result:
@@ -172,6 +187,21 @@ def run_rotation(today=None):
             + ', '.join(f'{secid} {weight:.0%}' for secid, weight in result['target'].items())
             + '\n' + result['reason']
         )
+    run_dividend()
+    return result
+
+
+def run_dividend():
+    """ Набор бумаг дивидендного разгона на следующий торговый день (исполнитель берёт их
+    вместо части фонда акций ротации)."""
+    from source.settings.settings import DIVIDEND_ENABLED
+    if not DIVIDEND_ENABLED:
+        return None
+    from elements.dividend.worker import DividendOverlay, describe
+    result = DividendOverlay.update()
+    text = describe(result)
+    if text:
+        tlg.send_message(text)
     return result
 
 
@@ -300,6 +330,8 @@ def run_blind_full(no_ga: bool, periods: str):
     from elements.regime.blind import FullBlind, summary_lines, decide_switches
     from elements.selftune.params import save_active
     from source.settings.settings import BLIND_PERIODS, BLIND_GA_STEPS
+    from elements.regime import assets
+    assets.update()
     panel, history = regime_panel()
     blind = FullBlind(panel, history, ga_steps=0 if no_ga else BLIND_GA_STEPS, periods=periods or BLIND_PERIODS)
     result = blind.run(progress=lambda done, total: Algorithm.save_activity(
@@ -308,12 +340,18 @@ def run_blind_full(no_ga: bool, periods: str):
     switches, note = decide_switches(result)
     blind.save(result, note=('без генетики; ' if no_ga else '') + note)
     save_active('regime_switch', switches, data_end=result['periods'][0]['END'], note=note)
+    from elements.regime.allocation import save_live
+    save_live(result.get('allocation_log', []), data_end=result['periods'][0]['END'])
     longest = result['periods'][-1]
     say('Слепой тест (счёт 50 тыс. ₽, комиссии АЛОР, лоты' + (', без генетики' if no_ga else '') + '):\n'
         + '\n'.join(summary_lines(result))
         + f'\nКраткосрочные сделки за {longest["PERIOD"]}: {longest["SHORT_RETURN"]:+.1%} '
         f'({longest["SHORT_TRADES"]} сд.), ротация {longest["ROTATION_RETURN"]:+.1%} '
-        f'(прежняя {longest["OLD_ROTATION_RETURN"]:+.1%}).\nРешение: {note}.')
+        f'(прежняя {longest["OLD_ROTATION_RETURN"]:+.1%}).'
+        f'\nДивидендный разгон за {longest["PERIOD"]}: система {longest["NODIV_RETURN"]:+.1%} → {longest["TOTAL_RETURN"]:+.1%}, '
+        f'ротация {longest["ROTATION_RETURN"]:+.1%} → {longest["ROTATION_DIV_RETURN"]:+.1%}, '
+        f'прежняя {longest["OLD_ROTATION_RETURN"]:+.1%} → {longest["OLD_ROTATION_DIV_RETURN"]:+.1%}.'
+        f'\nРешение: {note}.')
 
 
 def show_statistic():

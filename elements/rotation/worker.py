@@ -189,10 +189,11 @@ def select_caps(prices: pd.DataFrame, regimes: pd.Series, end, signal: pd.Series
     return caps
 
 
-def regime_daily(prices: pd.DataFrame, regimes: pd.Series, cap_of=None) -> pd.Series:
+def regime_daily(prices: pd.DataFrame, regimes: pd.Series, cap_of=None, with_weights: bool = False):
     """ Дневная доходность ротации с долей акций по режиму рынка: решение в последний торговый
     день месяца, а при смене режима — сразу (новая доля со следующего дня).
-    cap_of(дата, режим) -> доля акций; None — прежняя постоянная ROTATION_EQ_CAP без учёта режима."""
+    cap_of(дата, режим) -> доля акций; None — прежняя постоянная ROTATION_EQ_CAP без учёта режима.
+    with_weights — вернуть ещё и действующие доли активов по дням."""
     returns = prices.pct_change().fillna(0)
     regimes = regimes.reindex(prices.index).ffill().fillna('neutral')
     month = prices.index.to_period('M')
@@ -210,7 +211,8 @@ def regime_daily(prices: pd.DataFrame, regimes: pd.Series, cap_of=None) -> pd.Se
     weights = weights.ffill().fillna(0).shift(1).fillna(0)
     turnover = weights.diff().abs().sum(axis=1).fillna(0)
     fees = (weights['EQ'] + weights['BOND']) * ROTATION_FUND_FEE / 252
-    return (weights * returns).sum(axis=1) - turnover * ROTATION_COST - fees
+    daily = (weights * returns).sum(axis=1) - turnover * ROTATION_COST - fees
+    return (daily, weights) if with_weights else daily
 
 
 def backtest(prices: pd.DataFrame, start: str = '2021-01-01') -> dict:

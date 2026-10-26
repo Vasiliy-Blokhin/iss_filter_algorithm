@@ -1,4 +1,6 @@
+import logging
 from datetime import datetime
+from time import sleep
 
 import pandas as pd
 import sqlalchemy as sa
@@ -10,6 +12,8 @@ from source.sql.tables import Base, Candle, HourCandle, Security, Activity
 from source.settings.settings import DB_URL
 
 
+logger = logging.getLogger(__name__)
+
 main_engine = sa.create_engine(DB_URL, echo=False)
 
 if main_engine.dialect.name == 'sqlite':
@@ -20,6 +24,24 @@ if main_engine.dialect.name == 'sqlite':
         cursor.execute('PRAGMA journal_mode=WAL')
         cursor.execute('PRAGMA busy_timeout=30000')
         cursor.close()
+
+
+LOCK_RETRIES = 3
+
+
+def retry_locked(write):
+    """ Общую SQLite пишут несколько процессов; чужая долгая транзакция может держать блокировку
+    дольше busy_timeout. Тогда запись повторяется (через 5, 10 с), а не теряется."""
+    def wrapper(*args, **kwargs):
+        for attempt in range(LOCK_RETRIES):
+            try:
+                return write(*args, **kwargs)
+            except sa.exc.OperationalError as error:
+                if 'locked' not in str(error) or attempt == LOCK_RETRIES - 1:
+                    raise
+                logger.warning(f'БД занята, повтор записи через {5 * (attempt + 1)} с')
+                sleep(5 * (attempt + 1))
+    return wrapper
 
 
 class SQLmain:
@@ -40,6 +62,7 @@ class SQLmain:
                         ))
 
     @staticmethod
+    @retry_locked
     def upsert(table, rows: list[dict], keys: list[str]):
         """ Вставка с обновлением при конфликте уникального ключа."""
         if not rows:
@@ -146,13 +169,18 @@ class SQLmain:
 
     @classmethod
     def save_activity(cls, service: str, message: str = ''):
-        cls.upsert(
-            Activity,
-            [{'SERVICE': service, 'LAST_TIME': datetime.now(), 'MESSAGE': message[:500]}],
-            ['SERVICE'],
-        )
+        """ Отметка «сервис жив». Общую БД пишут несколько процессов, и долгая чужая транзакция
+        может держать блокировку дольше busy_timeout — тогда пробуем ещё раз, а не ломаем цикл сервиса."""
+        row = {'SERVICE': service, 'LAST_TIME': datetime.now(), 'MESSAGE': message[:500]}
+        try:
+            cls.upsert(Activity, [row], ['SERVICE'])  # upsert сам повторяет запись при блокировке
+        except sa.exc.OperationalError as error:
+            if 'locked' not in str(error):
+                raise
+            logger.warning(f'activity {service}: БД занята, отметка пропущена')
 
     @staticmethod
+    @retry_locked
     def append_data(data, table):
         with Session(bind=main_engine) as s:
             s.execute(sa.insert(table).values(data))

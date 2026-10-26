@@ -14,6 +14,16 @@ INTRADAY_FEATURES = [
 DIVIDEND_FEATURES = ['div_days', 'div_yield', 'div_after_days']
 
 MAIN_OPEN_HOUR, MAIN_CLOSE_HOUR, EVENING_HOUR = 10, 18, 19
+# С этой даты расчёты по акциям T+1, до неё — T+2
+T1_START = np.datetime64('2023-07-31', 'D')
+
+
+def last_cum_date(registry) -> np.ndarray:
+    """ Последний день с правом на дивиденд: за 2 (T+2, до 31.07.2023) или 1 (T+1) будний день
+    до даты реестра. Торги выходного дня (с 2025) расчётными днями не считаются."""
+    registry = pd.to_datetime(pd.Series(registry)).to_numpy().astype('datetime64[D]')
+    lag = np.where(registry < T1_START, 2, 1)
+    return np.busday_offset(registry, -lag, roll='backward')
 
 
 def session_frame(hours: pd.DataFrame) -> pd.DataFrame:
@@ -64,7 +74,7 @@ def dividend_features(panel: pd.DataFrame, dividends: pd.DataFrame) -> pd.DataFr
     """ Дни до ближайшей отсечки (известной на дату), доходность дивиденда, дни после отсечки.
 
     Используются только дивиденды, объявленные не позже даты строки (без заглядывания вперёд).
-    Последний день с правом на дивиденд при T+1 — рабочий день перед датой реестра.
+    Последний день с правом на дивиденд — см. last_cum_date (T+2 до 31.07.2023, затем T+1).
     """
     panel = panel.copy()
     for column in DIVIDEND_FEATURES:
@@ -78,9 +88,7 @@ def dividend_features(panel: pd.DataFrame, dividends: pd.DataFrame) -> pd.DataFr
     dividends['ANNOUNCE_DATE'] = dividends['ANNOUNCE_DATE'].fillna(
         dividends['REGISTRY_DATE'] - pd.Timedelta(days=30)
     )
-    dividends['LAST_CUM'] = pd.to_datetime(np.busday_offset(
-        dividends['REGISTRY_DATE'].to_numpy().astype('datetime64[D]'), -1, roll='backward'
-    ))
+    dividends['LAST_CUM'] = pd.to_datetime(last_cum_date(dividends['REGISTRY_DATE']))
 
     parts = []
     for secid, rows in panel.groupby('SECID', sort=False):
@@ -120,6 +128,5 @@ def ex_dividend_cash(panel: pd.DataFrame, dividends: pd.DataFrame, tax: float = 
     if dividends.empty:
         return pd.Series(dtype=float)
     dividends = dividends.copy()
-    registry = pd.to_datetime(dividends['REGISTRY_DATE']).to_numpy().astype('datetime64[D]')
-    dividends['LAST_CUM'] = pd.to_datetime(np.busday_offset(registry, -1, roll='backward'))
+    dividends['LAST_CUM'] = pd.to_datetime(last_cum_date(dividends['REGISTRY_DATE']))
     return dividends.set_index(['SECID', 'LAST_CUM'])['VALUE'] * (1 - tax)

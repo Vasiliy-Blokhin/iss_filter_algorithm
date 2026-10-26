@@ -47,7 +47,8 @@ from elements.evolve.market import EMarket
 from elements.notification.worker import TelegramNotification as tlg
 from elements.selftune.worker import parse_windows, current_window, seconds_to_next_window
 from source.settings.settings import (
-    handler, TIMEZONE, DATA_DIR, EVOLVE_DAYS, EVOLVE_WINDOWS, EVOLVE_DAILY_DAYS, EVOLVE_DAILY_WINDOW, EVOLVE_MIN_CAGR, EVOLVE_MIN_TRADES, EVOLVE_POOL,
+    handler, TIMEZONE, DATA_DIR, EVOLVE_DAYS, EVOLVE_WINDOWS, EVOLVE_DAILY_DAYS, EVOLVE_DAILY_WINDOW,
+    EVOLVE_REGIME_DAYS, EVOLVE_REGIME_WINDOW, EVOLVE_MIN_CAGR, EVOLVE_MIN_TRADES, EVOLVE_POOL,
     EVOLVE_SIMILAR, EVOLVE_LIVE_STAGES, EVOLVE_TARGET_TRADES, EVOLVE_ACTIVITY_PENALTY, SELFTUNE_MARGIN,
     EVOLVE_WORST_YEAR, EVOLVE_MIN_POS_YEARS, EVOLVE_PARSIMONY, EVOLVE_NEIGHBORS, EVOLVE_NEIGHBOR_SHARE,
     EVOLVE_MIN_DSR, REGIME_MIN_TRADES, EVOLVE_BATCH, EVOLVE_FRESH_MIN,
@@ -600,10 +601,12 @@ def group_title(regime: str) -> str:
     return f'{info["emoji"]} {info["title"]}'
 
 
-def run_groups(until: datetime, groups: list[str] | None = None, phases=PHASES) -> list[str]:
+def run_groups(until: datetime, groups: list[str] | None = None, phases=PHASES,
+               title: str = '🧬 Геномный поиск завершён.') -> list[str]:
     """ Поиск до until по группам (общий + режимы) поровну по времени; в Telegram — одна сводка."""
     from elements.evolve.genes import REGISTRY, NEW_GENES
     groups = search_groups() if groups is None else groups
+    started = datetime.now(ZoneInfo(TIMEZONE))
     touch_lock()
     reports = []
     try:
@@ -616,7 +619,8 @@ def run_groups(until: datetime, groups: list[str] | None = None, phases=PHASES) 
             reports += _run_phases(end, phases, REGISTRY, NEW_GENES, regime, notify=False)
     finally:
         release_lock()
-    text = '🧬 Геномный поиск завершён.\n' + '\n'.join(reports)
+    text = (f'{title} {started:%H:%M}–{datetime.now(ZoneInfo(TIMEZONE)):%H:%M}\n'
+            + ('\n'.join(reports) or 'нет групп — не хватило времени'))
     logger.info(text)
     print('ИТОГ: ' + text.replace('\n', '\nИТОГ: '))
     try:
@@ -719,18 +723,24 @@ def window_end(now: datetime, window: tuple) -> datetime:
 
 
 def run_daemon(days: str = EVOLVE_DAYS, spec: str = EVOLVE_WINDOWS,
-               daily_days: str = EVOLVE_DAILY_DAYS, daily_spec: str = EVOLVE_DAILY_WINDOW):
-    """ Демон: запросы из Telegram (/поиск), ежедневная часовая итерация (пн–сб 09–10) и
-    воскресные окна непрерывного поиска. Если поиск уже идёт в другом процессе — ждёт."""
+               daily_days: str = EVOLVE_DAILY_DAYS, daily_spec: str = EVOLVE_DAILY_WINDOW,
+               regime_days: str = EVOLVE_REGIME_DAYS, regime_spec: str = EVOLVE_REGIME_WINDOW):
+    """ Демон: запросы из Telegram (/поиск), утренний поиск по режимам (ежедневно 05:00–06:50),
+    ежедневная часовая итерация (пн–сб 09–10) и воскресные окна непрерывного поиска.
+    Если поиск уже идёт в другом процессе — ждёт."""
+    from elements.regime.detector import REGIME_KEYS
     weekdays = {int(day) for day in days.split(',') if day.strip()}
     windows = parse_windows(spec)
     daily_weekdays = {int(day) for day in daily_days.split(',') if day.strip()}
     daily_windows = parse_windows(daily_spec)
-    last_daily = None
+    regime_weekdays = {int(day) for day in regime_days.split(',') if day.strip()}
+    regime_windows = parse_windows(regime_spec)
+    last_daily = last_regime = None
     evolver = None
     active = False
     logger.info(f'Абстрактный алгоритм запущен: дни {sorted(weekdays)}, окна {spec}; '
-                f'ежедневно {sorted(daily_weekdays)} {daily_spec}; запросы /поиск')
+                f'ежедневно {sorted(daily_weekdays)} {daily_spec}; режимы {sorted(regime_weekdays)} '
+                f'{regime_spec}; запросы /поиск')
     while True:
         now = datetime.now(ZoneInfo(TIMEZONE))
         try:
@@ -738,7 +748,14 @@ def run_daemon(days: str = EVOLVE_DAYS, spec: str = EVOLVE_WINDOWS,
             if request and not search_busy():
                 run_request(request)
                 continue
-            daily = current_window(now, daily_windows) if now.weekday() in daily_weekdays else None
+            regime_window = current_window(now, regime_windows) if now.weekday() in regime_weekdays else None
+            if regime_window and last_regime != now.date() and not search_busy():
+                last_regime = now.date()
+                end = window_end(now, regime_window)
+                tlg.send_message(f'🧬 Поиск по режимам до {end:%H:%M}.')
+                run_groups(end, groups=list(REGIME_KEYS), title='🧬 Поиск по режимам завершён.')
+                continue
+            daily =current_window(now, daily_windows) if now.weekday() in daily_weekdays else None
             if daily and last_daily != now.date() and not search_busy():
                 last_daily = now.date()
                 tlg.send_message(f'🧬 Геномный поиск (общий + режимы) до {window_end(now, daily):%H:%M}.')

@@ -120,6 +120,9 @@ EVOLVE_WINDOWS = getenv('EVOLVE_WINDOWS') or '09:00-13:00;15:00-17:00'
 # Ежедневная часовая итерация (этапы PHASES) в остальные дни: пн–сб 09:00–10:00.
 EVOLVE_DAILY_DAYS = getenv('EVOLVE_DAILY_DAYS') or '0,1,2,3,4,5'
 EVOLVE_DAILY_WINDOW = getenv('EVOLVE_DAILY_WINDOW') or '09:00-10:00'
+# Ежедневный утренний рекурсивный поиск только по режимам рынка (без общей группы), в конце — краткая сводка.
+EVOLVE_REGIME_DAYS = getenv('EVOLVE_REGIME_DAYS') or '0,1,2,3,4,5,6'
+EVOLVE_REGIME_WINDOW = getenv('EVOLVE_REGIME_WINDOW') or '05:00-06:50'
 EVOLVE_START = getenv('EVOLVE_START') or '2020-07-01'
 EVOLVE_HOLDOUT_DAYS = env_int('EVOLVE_HOLDOUT_DAYS', 250)
 # Последние EVOLVE_BLIND_DAYS из контрольного периода — слепая проверка: считается и пишется
@@ -253,6 +256,14 @@ BLIND_GA_STEPS = env_int('BLIND_GA_STEPS', 60)
 BLIND_CAPITAL = env_float('BLIND_CAPITAL', 50_000)
 MAX_ENTRY_GAP = env_float('MAX_ENTRY_GAP', 0.02)  # как у исполнителя: не входить при гэпе > 2%
 ROTATION_SHARE = env_float('ROTATION_SHARE', 0.9)  # как у исполнителя
+# Дивидендный разгон (elements/dividend, исследование data/dividend_study): пока ротация держит
+# фонд акций, часть его доли — в бумагах с объявленным дивидендом за месяц до отсечки.
+DIVIDEND_ENABLED = env_bool('DIVIDEND_ENABLED', True)
+DIVIDEND_ENTRY_DAYS = env_int('DIVIDEND_ENTRY_DAYS', 21)    # вход не раньше, чем за N будней до L
+DIVIDEND_LATEST_DAYS = env_int('DIVIDEND_LATEST_DAYS', 10)  # и не позже, чем за N будней
+DIVIDEND_MIN_YIELD = env_float('DIVIDEND_MIN_YIELD', 0.04)  # дивиденд / цена на день решения
+DIVIDEND_MIN_TURNOVER = env_float('DIVIDEND_MIN_TURNOVER', 1e8)  # медиана оборота за 60 дней, ₽
+DIVIDEND_SLOTS = env_int('DIVIDEND_SLOTS', 5)               # бумаг одновременно, по 1/N доли акций
 TAX_RATE = env_float('TAX_RATE', 0.13)              # НДФЛ с положительного годового результата
 # Генетика: в каждой пачке из EVOLVE_BATCH шагов не меньше EVOLVE_FRESH_MIN полностью новых геномов.
 EVOLVE_BATCH = env_int('EVOLVE_BATCH', 10)
